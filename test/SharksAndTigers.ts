@@ -561,6 +561,152 @@ describe("🦈 & 🐅", function () {
 
         await expect(game1.connect(walletOne).makeMove(movePosition)).to.emit(game1, "MoveMade").withArgs(game1Address, walletOneAddr, movePosition);
       })
+
+      it("should set message sender as winner if winning move is made", async function(){
+        /* playerOne will win the game as below:
+          | 🦈 | -- | 🐅 |
+          | 🦈 | -- | 🐅 |
+          | 🦈 | -- | -- |
+        */
+
+        const walletOneAddr = await walletOne.getAddress();
+       
+        // play the game to win for playerOne
+        await game1.connect(walletOne).makeMove(3);
+        await game1.connect(walletThree).makeMove(5);
+        await game1.connect(walletOne).makeMove(6);
+
+        const winner = await game1.winner();
+
+        expect(winner).to.equal(walletOneAddr);
+      });
+
+      it("should set GameState to Ended if game is won", async function(){
+        /* playerOne will win the game as below:
+          | 🦈 | -- | 🐅 |
+          | 🦈 | -- | 🐅 |
+          | 🦈 | -- | -- |
+        */
+
+        const walletOneAddr = await walletOne.getAddress();
+       
+        // play the game to win for playerOne
+        await game1.connect(walletOne).makeMove(3);
+        await game1.connect(walletThree).makeMove(5);
+        await game1.connect(walletOne).makeMove(6);
+
+        const winner = await game1.winner();
+        expect(winner).to.equal(walletOneAddr);
+
+        /*
+          GameState public gameState;
+
+          enum GameState {
+            Open,    // 0
+            Active,  // 1
+            Ended    // 2
+          }
+        */
+
+        const gameStateGame1 = await game1.gameState();
+        expect(gameStateGame1.toString()).to.equal("2");
+      });
+
+      it("should set GameState to Ended if game is a draw", async function(){
+        /* Will complete the board as below:
+          | 🦈 | 🐅 | 🦈 |
+          | 🐅 | 🐅 | 🦈 |
+          | 🦈 | 🦈 | 🐅 |
+        */
+
+        // play the game to fill the board
+        await game1.connect(walletOne).makeMove(4);
+        await game1.connect(walletThree).makeMove(8);
+        await game1.connect(walletOne).makeMove(5);
+        await game1.connect(walletThree).makeMove(3);
+        await game1.connect(walletOne).makeMove(7);
+        await game1.connect(walletThree).makeMove(1);
+        await game1.connect(walletOne).makeMove(6);
+
+        /*
+          GameState public gameState;
+
+          enum GameState {
+            Open,    // 0
+            Active,  // 1
+            Ended    // 2
+          }
+        */
+
+        const gameStateGame1 = await game1.gameState();
+        expect(gameStateGame1.toString()).to.equal("2");
+      });
+
+      it("should set isDraw to true if game is a draw", async function(){
+        /* Will complete the board as below:
+          | 🦈 | 🐅 | 🦈 |
+          | 🐅 | 🐅 | 🦈 |
+          | 🦈 | 🦈 | 🐅 |
+        */
+
+        // play the game to fill the board
+        await game1.connect(walletOne).makeMove(4);
+        await game1.connect(walletThree).makeMove(8);
+        await game1.connect(walletOne).makeMove(5);
+        await game1.connect(walletThree).makeMove(3);
+        await game1.connect(walletOne).makeMove(7);
+        await game1.connect(walletThree).makeMove(1);
+        await game1.connect(walletOne).makeMove(6);
+
+        const winner = await game1.winner();
+        expect(winner).to.equal(ethers.ZeroAddress);
+        const isDraw = await game1.isDraw();
+        expect(isDraw).to.equal(true);
+      });
+
+      it("should emit GameEnded event when game ends in a draw", async function(){
+        /* Will complete the board as below:
+          | 🦈 | 🐅 | 🦈 |
+          | 🐅 | 🐅 | 🦈 |
+          | 🦈 | 🦈 | 🐅 |
+        */
+
+        // play the game to fill the board
+        await game1.connect(walletOne).makeMove(4);
+        await game1.connect(walletThree).makeMove(8);
+        await game1.connect(walletOne).makeMove(5);
+        await game1.connect(walletThree).makeMove(3);
+        await game1.connect(walletOne).makeMove(7);
+        await game1.connect(walletThree).makeMove(1);
+        
+        const game1Address = await game1.getAddress();
+        const walletOneAddr = await walletOne.getAddress();
+        const walletThreeAddr = await walletThree.getAddress();
+        const wager = await game1.wager();
+
+        await expect(game1.connect(walletOne).makeMove(6)).to.emit(game1, "GameEnded").withArgs(game1Address, walletOneAddr, walletThreeAddr, wager, ethers.ZeroAddress, true);
+      })
+
+      it("should emit GameEnded event when game is won", async function(){
+        /* playerOne will win the game as below:
+          | 🦈 | -- | 🐅 |
+          | 🦈 | -- | 🐅 |
+          | 🦈 | -- | -- |
+        */
+
+      
+        // play the game to win for playerOne
+        await game1.connect(walletOne).makeMove(3);
+        await game1.connect(walletThree).makeMove(5);
+
+        const game1Address = await game1.getAddress();
+        const walletOneAddr = await walletOne.getAddress();
+        const walletThreeAddr = await walletThree.getAddress();
+        const wager = await game1.wager();
+        const isDraw = await game1.isDraw();
+        
+        await expect(game1.connect(walletOne).makeMove(6)).to.emit(game1, "GameEnded").withArgs(game1Address, walletOneAddr, walletThreeAddr, wager, walletOneAddr, isDraw);
+      })
     })
 
     describe("claimReward", function(){
