@@ -52,6 +52,7 @@ contract SharksAndTigers {
 
   event PlayerTwoJoined(address gameContract, address playerTwo, uint position);
   event MoveMade(address gameContract, address player, uint position);
+  event GameEnded(address gameContract, address playerOne, address playerTwo, uint256 wager, address winner, bool isDraw);
 
   enum GameState {
     Open,
@@ -117,10 +118,12 @@ contract SharksAndTigers {
       // game is won
       gameState = GameState.Ended;
       winner = msg.sender;
+      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw);
     } else if(isBoardFull()){
       // game is a draw
       gameState = GameState.Ended;
       isDraw = true;
+      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw);
     } else {
       emit MoveMade(address(this), msg.sender, position);
     }
