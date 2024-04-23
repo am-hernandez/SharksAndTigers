@@ -5,20 +5,21 @@ pragma solidity ^0.8.19;
 contract SharksAndTigersFactory {
   uint public gameCount = 0;
 
-  event GameCreated(address playerOne, address gameContract, uint indexed id);
+  event GameCreated(address playerOne, uint32 expirationTime, address gameContract, uint indexed id);
 
-  function createGame(uint firstMovePos, uint _playerOneMark) public payable{
+  function createGame(uint firstMovePos, uint _playerOneMark, uint32 expirationTime) public payable{
     require(_playerOneMark == 1 || _playerOneMark == 2, "Invalid mark for board");
     require(msg.value > 0, "Game creation requires a wager");
     require(firstMovePos >= 0 && firstMovePos < 9, "Position is out of range");
+    require(expirationTime >= block.timestamp, "Expiration time must be in the future");
 
     SharksAndTigers.Mark playerOneMark = SharksAndTigers.Mark(_playerOneMark);
 
-    SharksAndTigers game = (new SharksAndTigers){value: msg.value}(msg.sender, firstMovePos, playerOneMark);
+    SharksAndTigers game = (new SharksAndTigers){value: msg.value}(msg.sender, firstMovePos, playerOneMark, expirationTime);
 
     gameCount++;
 
-    emit GameCreated(msg.sender, address(game), gameCount);
+    emit GameCreated(msg.sender, expirationTime, address(game), gameCount);
   }
 }
 
@@ -38,6 +39,7 @@ contract SharksAndTigersFactory {
 */
 contract SharksAndTigers {
   uint256 public wager;
+  uint32 public expirationTime;
   address public playerOne;
   address public playerTwo;
   address public currentPlayer;
@@ -52,7 +54,7 @@ contract SharksAndTigers {
 
   event PlayerTwoJoined(address gameContract, address playerTwo, uint position);
   event MoveMade(address gameContract, address player, uint position);
-  event GameEnded(address gameContract, address playerOne, address playerTwo, uint256 wager, address winner, bool isDraw);
+  event GameEnded(address gameContract, address playerOne, address playerTwo, uint256 wager, address winner, bool isDraw, uint32 expirationTime);
 
   enum GameState {
     Open,
@@ -66,8 +68,9 @@ contract SharksAndTigers {
     Tiger
   }
 
-  constructor(address _playerOne, uint position, Mark mark) payable {
+  constructor(address _playerOne, uint position, Mark mark, uint32 _expirationTime) payable {
     playerOne = _playerOne;
+    expirationTime = _expirationTime;
     gameState = GameState.Open;
     wager = msg.value;
     isRewardClaimed = false;
@@ -87,6 +90,7 @@ contract SharksAndTigers {
 
   function joinGame(uint position) external payable validatePlayerMove(position) {
     require(gameState == GameState.Open, "Game is not open to joining");
+    require(expirationTime >= block.timestamp, "Game has expired");
     require(msg.value == wager, "Incorrect wager amount");
 
     gameState = GameState.Active;
@@ -118,12 +122,12 @@ contract SharksAndTigers {
       // game is won
       gameState = GameState.Ended;
       winner = msg.sender;
-      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw);
+      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw, expirationTime);
     } else if(isBoardFull()){
       // game is a draw
       gameState = GameState.Ended;
       isDraw = true;
-      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw);
+      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw, expirationTime);
     } else {
       emit MoveMade(address(this), msg.sender, position);
     }
@@ -193,11 +197,20 @@ contract SharksAndTigers {
   }
 
   function withdrawWager() public {
-    require(gameState == GameState.Ended, "Game is not ended");
     require(winner == address(0), "Game is not a draw, winner must call claimReward");
+
+    if(gameState == GameState.Open && expirationTime >= block.timestamp){
+      revert("Game is not open and expired");
+    } 
+    
+    if(gameState == GameState.Active){
+      revert("Game is not ended");
+    }
 
     uint256 playerBalance = balances[msg.sender];
     require(playerBalance > 0, "Nothing to withdraw");
+
+    emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw, expirationTime);
 
     balances[msg.sender] = 0;
     (bool sent, ) = payable(msg.sender).call{value: playerBalance}("");
