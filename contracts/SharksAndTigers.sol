@@ -5,20 +5,21 @@ pragma solidity ^0.8.19;
 contract SharksAndTigersFactory {
   uint public gameCount = 0;
 
-  event GameCreated(address playerOne, address gameContract, uint indexed id);
+  event GameCreated(address playerOne, address gameContract, uint256 playclock, uint indexed id);
 
-  function createGame(uint firstMovePos, uint _playerOneMark) public payable{
+  function createGame(uint firstMovePos, uint _playerOneMark, uint256 playclock) public payable{
     require(_playerOneMark == 1 || _playerOneMark == 2, "Invalid mark for board");
     require(msg.value > 0, "Game creation requires a wager");
     require(firstMovePos >= 0 && firstMovePos < 9, "Position is out of range");
+    require(playclock > 0, "Must set a play clock value");
 
     SharksAndTigers.Mark playerOneMark = SharksAndTigers.Mark(_playerOneMark);
 
-    SharksAndTigers game = (new SharksAndTigers){value: msg.value}(msg.sender, firstMovePos, playerOneMark);
+    SharksAndTigers game = (new SharksAndTigers){value: msg.value}(msg.sender, firstMovePos, playerOneMark, playclock);
 
     gameCount++;
 
-    emit GameCreated(msg.sender, address(game), gameCount);
+    emit GameCreated(msg.sender, address(game), playclock, gameCount);
   }
 }
 
@@ -38,6 +39,8 @@ contract SharksAndTigersFactory {
 */
 contract SharksAndTigers {
   uint256 public wager;
+  uint256 public playClock;
+  uint256 public lastPlayTime;
   address public playerOne;
   address public playerTwo;
   address public currentPlayer;
@@ -66,10 +69,11 @@ contract SharksAndTigers {
     Tiger
   }
 
-  constructor(address _playerOne, uint position, Mark mark) payable {
+  constructor(address _playerOne, uint position, Mark mark, uint256 _playclock) payable {
     playerOne = _playerOne;
     gameState = GameState.Open;
     wager = msg.value;
+    playClock = _playclock;
     isRewardClaimed = false;
     balances[_playerOne] = msg.value;
     playerOneMark = Mark(mark);
@@ -80,6 +84,7 @@ contract SharksAndTigers {
   }
 
   modifier validatePlayerMove(uint position) {
+    require(gameState == GameState.Open || block.timestamp - lastPlayTime <= playClock, "You ran out of time to make a move");
     require(position >= 0 && position < 9, "Position is out of range");
     require(gameBoard[position] == Mark.Empty, "Position is already marked");
     _;
@@ -94,6 +99,7 @@ contract SharksAndTigers {
     balances[msg.sender] = msg.value;
     gameBoard[position] = playerTwoMark;
     currentPlayer = playerOne;
+    lastPlayTime = block.timestamp;
 
     emit PlayerTwoJoined(address(this) ,playerTwo, position);    
   }
@@ -112,7 +118,8 @@ contract SharksAndTigers {
       currentPlayer = playerOne;
     }
 
-    gameBoard[position] = playMark;    
+    gameBoard[position] = playMark; 
+    lastPlayTime = block.timestamp;   
 
     if(isWinningMove(position)){
       // game is won

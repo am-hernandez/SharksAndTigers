@@ -35,7 +35,7 @@ describe("🦈 & 🐅", function () {
       it("should revert when passed an invalid mark", async function () {
         const revertErrorMessage = "Invalid mark for board";
 
-        await expect(sharksAndTigersFactory.connect(walletOne).createGame(0, 0, {
+        await expect(sharksAndTigersFactory.connect(walletOne).createGame(0, 0, 10, {
           value: ethers.parseEther("1.0")
         })).to.be.revertedWith(revertErrorMessage);
       });
@@ -43,7 +43,7 @@ describe("🦈 & 🐅", function () {
       it("should revert if wager not provided", async function () {
         const revertErrorMessage = "Game creation requires a wager";
 
-        await expect(sharksAndTigersFactory.connect(walletOne).createGame(0, 1, {
+        await expect(sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
           value: ethers.parseEther("0")
         })).to.be.revertedWith(revertErrorMessage);
       });
@@ -52,13 +52,13 @@ describe("🦈 & 🐅", function () {
         const revertErrorMessage = "Position is out of range";
 
         // acceptable range is 0 - 8
-        await expect(sharksAndTigersFactory.connect(walletOne).createGame(9, 1, {
+        await expect(sharksAndTigersFactory.connect(walletOne).createGame(9, 1, 10, {
           value: ethers.parseEther("1.0")
         })).to.be.revertedWith(revertErrorMessage);
       });
 
       it("should create a SharksAndTigers game when proper arguments and wager passed", async function () {
-        const newGame = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, {
+        const newGame = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
           value: ethers.parseEther("1.0"),
         });
 
@@ -73,7 +73,7 @@ describe("🦈 & 🐅", function () {
         // checks gameCount before creating new game
         const gameCountBefore = await sharksAndTigersFactory.gameCount();
 
-        const newGame = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, {
+        const newGame = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
           value: ethers.parseEther("1.0"),
         });
 
@@ -83,18 +83,18 @@ describe("🦈 & 🐅", function () {
         expect(Number(gameCountAfter - gameCountBefore)).to.be.equal(1);
       });
 
-      it("should emit GameCreated event with contract address and count", async function () {
+      it("should emit GameCreated event with player and game contract address, play clock, and game count", async function () {
         const walletOneAddr = await walletOne.getAddress();
 
-        const gameCreationResponse = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, {
+        const gameCreationResponse = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
           value: ethers.parseEther("1.0"),
         });
 
         const gameCreationReceipt = await gameCreationResponse.wait();
         // @ts-ignore
-        const [playerOneAddress, gameContractAddress, gameIdNumber] = gameCreationReceipt?.logs[0].args;
+        const [playerOneAddress, gameContractAddress, playClock, gameIdNumber] = gameCreationReceipt?.logs[0].args;
 
-        await expect(gameCreationReceipt).to.emit(sharksAndTigersFactory, "GameCreated").withArgs(playerOneAddress, gameContractAddress, gameIdNumber);
+        await expect(gameCreationReceipt).to.emit(sharksAndTigersFactory, "GameCreated").withArgs(playerOneAddress, gameContractAddress, playClock, gameIdNumber);
       });
     });
   });
@@ -105,7 +105,7 @@ describe("🦈 & 🐅", function () {
 
     beforeEach("before each test", async function (){
       /* Create GAME 1 */
-      const game1Res = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, {
+      const game1Res = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
         value: ethers.parseEther("1.0"),
       });
       const game1Rec = await game1Res.wait();
@@ -115,7 +115,7 @@ describe("🦈 & 🐅", function () {
       game1 = await ethers.getContractAt("SharksAndTigers", gameContract1);
 
       /* Create Game 2 */
-      const game2Res = await sharksAndTigersFactory.connect(walletTwo).createGame(5, 2, {
+      const game2Res = await sharksAndTigersFactory.connect(walletTwo).createGame(5, 2, 10, {
         value: ethers.parseEther("0.5"),
       });
       const game2Rec = await game2Res.wait();
