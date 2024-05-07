@@ -7,19 +7,19 @@ contract SharksAndTigersFactory {
 
   event GameCreated(address playerOne, address gameContract, uint256 playclock, uint indexed id);
 
-  function createGame(uint firstMovePos, uint _playerOneMark, uint256 playclock) public payable{
+  function createGame(uint firstMovePos, uint _playerOneMark, uint256 playClock) public payable{
     require(_playerOneMark == 1 || _playerOneMark == 2, "Invalid mark for board");
     require(msg.value > 0, "Game creation requires a wager");
     require(firstMovePos >= 0 && firstMovePos < 9, "Position is out of range");
-    require(playclock > 0, "Must set a play clock value");
+    require(playClock > 0, "Must set a play clock value");
 
     SharksAndTigers.Mark playerOneMark = SharksAndTigers.Mark(_playerOneMark);
 
-    SharksAndTigers game = (new SharksAndTigers){value: msg.value}(msg.sender, firstMovePos, playerOneMark, playclock);
+    SharksAndTigers game = (new SharksAndTigers){value: msg.value}(msg.sender, firstMovePos, playerOneMark, playClock);
 
     gameCount++;
 
-    emit GameCreated(msg.sender, address(game), playclock, gameCount);
+    emit GameCreated(msg.sender, address(game), playClock, gameCount);
   }
 }
 
@@ -69,11 +69,11 @@ contract SharksAndTigers {
     Tiger
   }
 
-  constructor(address _playerOne, uint position, Mark mark, uint256 _playclock) payable {
+  constructor(address _playerOne, uint position, Mark mark, uint256 _playClock) payable {
     playerOne = _playerOne;
     gameState = GameState.Open;
     wager = msg.value;
-    playClock = _playclock;
+    playClock = _playClock;
     isRewardClaimed = false;
     balances[_playerOne] = msg.value;
     playerOneMark = Mark(mark);
@@ -84,7 +84,6 @@ contract SharksAndTigers {
   }
 
   modifier validatePlayerMove(uint position) {
-    require(gameState == GameState.Open || block.timestamp - lastPlayTime <= playClock, "You ran out of time to make a move");
     require(position >= 0 && position < 9, "Position is out of range");
     require(gameBoard[position] == Mark.Empty, "Position is already marked");
     _;
@@ -107,6 +106,7 @@ contract SharksAndTigers {
   function makeMove(uint position) public validatePlayerMove(position){
     require(gameState == GameState.Active, "Game is not active");
     require(currentPlayer == msg.sender, "You are not the current player");
+    require(block.timestamp - lastPlayTime <= playClock, "You ran out of time to make a move");
 
     Mark playMark;
 

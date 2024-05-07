@@ -57,6 +57,14 @@ describe("🦈 & 🐅", function () {
         })).to.be.revertedWith(revertErrorMessage);
       });
 
+      it("should revert when play clock value not greater than 0", async function () {
+        const revertErrorMessage = "Must set a play clock value";
+
+        await expect(sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 0, {
+          value: ethers.parseEther("1.0")
+        })).to.be.revertedWith(revertErrorMessage);
+      });
+
       it("should create a SharksAndTigers game when proper arguments and wager passed", async function () {
         const newGame = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
           value: ethers.parseEther("1.0"),
@@ -512,6 +520,20 @@ describe("🦈 & 🐅", function () {
         const revertErrorMessage = "You are not the current player";
 
         await expect(game1.connect(walletThree).makeMove(3)).to.be.revertedWith(revertErrorMessage);
+      })
+
+      it("should revert if play clock is exceeded", async function(){
+        // game 1 has a 10 second play clock
+        const timeDelay = 10;
+        
+        const revertErrorMessage = "You ran out of time to make a move";
+
+        const block = await ethers.provider.getBlock(await ethers.provider.getBlockNumber());
+
+        await ethers.provider.send("evm_increaseTime", [timeDelay]);
+        await ethers.provider.send("evm_mine");
+
+        await expect(game1.connect(walletOne).makeMove(3)).to.be.revertedWith(revertErrorMessage);
       })
 
       it("should set player's Mark on gameBoard in given position", async function(){
