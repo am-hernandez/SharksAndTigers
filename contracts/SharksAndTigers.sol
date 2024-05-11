@@ -186,17 +186,26 @@ contract SharksAndTigers {
   }
 
   function claimReward() public {
-    require(gameState == GameState.Ended, "Game is not ended");
-    require(isDraw == false, "No winner, game ended in a draw");
-    require(winner == msg.sender, "Only the winner can claim the reward");
-    require(isRewardClaimed == false, "Reward already claimed");
-
+    bool isExpired;
+    if(block.timestamp - lastPlayTime > playClock){
+      require(currentPlayer != msg.sender, "Only the winner can claim the reward");
+      winner = msg.sender;
+      isExpired = true;
+    } else {
+      require(gameState == GameState.Ended, "Game is not ended");
+      require(isDraw == false, "No winner, game ended in a draw");
+      require(winner == msg.sender, "Only the winner can claim the reward");
+      require(isRewardClaimed == false, "Reward already claimed");
+    }
 
     balances[playerOne] = 0;
     balances[playerTwo] = 0;
     isRewardClaimed = true;
     (bool sent, ) = payable(winner).call{value: wager*2}("");
     require(sent, "transfer failed");
+    if(isExpired){
+      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw);
+    }
   }
 
   function withdrawWager() public {
