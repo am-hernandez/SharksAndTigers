@@ -203,13 +203,14 @@ contract SharksAndTigers {
     isRewardClaimed = true;
     (bool sent, ) = payable(winner).call{value: wager*2}("");
     require(sent, "transfer failed");
+
     if(isExpired){
       emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw);
     }
   }
 
   function withdrawWager() public {
-    require(gameState == GameState.Ended, "Game is not ended");
+    require(gameState != GameState.Active, "Cannot withdraw wager while game is active");
     require(winner == address(0), "Game is not a draw, winner must call claimReward");
 
     uint256 playerBalance = balances[msg.sender];
@@ -218,6 +219,9 @@ contract SharksAndTigers {
     balances[msg.sender] = 0;
     (bool sent, ) = payable(msg.sender).call{value: playerBalance}("");
     require(sent, "transfer failed");
+
+    if(gameState == GameState.Open){
+      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw);
+    }
   }
-  
 }

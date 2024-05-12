@@ -1014,14 +1014,15 @@ describe("🦈 & 🐅", function () {
         await game2.connect(walletTwo).makeMove(3);
       });
 
-      it("should revert if GameState is not ended", async function(){
-        const revertErrorMessage = "Game is not ended";
+      it("should revert if GameState is active", async function(){
+        const revertErrorMessage = "Cannot withdraw wager while game is active";
 
         // playerTwo
         await expect(game1.connect(walletThree).withdrawWager()).to.be.revertedWith(revertErrorMessage);
         // playerOne
         await expect(game1.connect(walletOne).withdrawWager()).to.be.revertedWith(revertErrorMessage);
       });
+
       it("should revert if game has a winner", async function(){
         const revertErrorMessage = "Game is not a draw, winner must call claimReward";
 
@@ -1056,6 +1057,59 @@ describe("🦈 & 🐅", function () {
 
         // attempt to withdraw as a non-player
         await expect(game2.connect(walletOne).withdrawWager()).to.be.revertedWith(revertErrorMessage);
+      });
+
+      it("should should emit GameEnded event after wager withdrawn from an open game", async function(){
+        /* Create Game */
+        const gameRes = await sharksAndTigersFactory.connect(walletTwo).createGame(5, 2, 10, {
+          value: ethers.parseEther("3.14"),
+        });
+        const gameRec = await gameRes.wait();
+
+        // @ts-ignore
+        const [, gameContract,] = gameRec?.logs[0].args;
+        const game = await ethers.getContractAt("SharksAndTigers", gameContract);
+
+        const gameAddress = await game.getAddress();
+        const playerOneAddr = await game.playerOne();
+        const playerTwoAddr = await game.playerTwo();
+        const winner = await game.winner();
+        const wager = await game.wager();
+        const isDraw = await game.isDraw();
+
+        await expect(game.connect(walletTwo).withdrawWager()).to.emit(game, "GameEnded").withArgs(gameAddress, playerOneAddr, playerTwoAddr, wager, winner, isDraw);
+      });
+
+      it("should successfully transfer player's wager after withdraw", async function(){
+        const walletThreeAddr = await walletThree.getAddress();
+        const initialBalance = await walletThree.provider?.getBalance(walletThreeAddr);
+
+        /* Create Game */
+        const gameRes = await sharksAndTigersFactory.connect(walletThree).createGame(0, 1, 1, {
+          value: ethers.parseEther("1"),
+        });
+        const gameRec = await gameRes.wait();
+        const createGameGasUsed = gameRec?.gasUsed;
+        const createGameGasPrice = gameRec?.gasPrice;
+        const createGameGasCost = createGameGasUsed * createGameGasPrice;
+
+        // @ts-ignore
+        const [, gameContract,] = gameRec?.logs[0].args;
+        const game = await ethers.getContractAt("SharksAndTigers", gameContract);
+
+        const withdrawWagerResponse = await game.connect(walletThree).withdrawWager();
+        const endingBalance = await walletThree.provider?.getBalance(walletThreeAddr);
+
+        const withdrawWagerReceipt = await withdrawWagerResponse.wait();
+        const withdrawWagerGasUsed = withdrawWagerReceipt?.gasUsed;
+        const withdrawWagerGasPrice = withdrawWagerReceipt?.gasPrice;
+
+        const withdrawWagerGasCost = withdrawWagerGasUsed * withdrawWagerGasPrice;
+
+        const totalGasCost = createGameGasCost + withdrawWagerGasCost;
+        const balanceAfterGasCosts = initialBalance - totalGasCost;
+
+        expect(endingBalance).to.equal(balanceAfterGasCosts);
       });
     })
   })
