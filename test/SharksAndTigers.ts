@@ -35,7 +35,7 @@ describe("🦈 & 🐅", function () {
       it("should revert when passed an invalid mark", async function () {
         const revertErrorMessage = "Invalid mark for board";
 
-        await expect(sharksAndTigersFactory.connect(walletOne).createGame(0, 0, {
+        await expect(sharksAndTigersFactory.connect(walletOne).createGame(0, 0, 10, {
           value: ethers.parseEther("1.0")
         })).to.be.revertedWith(revertErrorMessage);
       });
@@ -43,7 +43,7 @@ describe("🦈 & 🐅", function () {
       it("should revert if wager not provided", async function () {
         const revertErrorMessage = "Game creation requires a wager";
 
-        await expect(sharksAndTigersFactory.connect(walletOne).createGame(0, 1, {
+        await expect(sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
           value: ethers.parseEther("0")
         })).to.be.revertedWith(revertErrorMessage);
       });
@@ -52,13 +52,21 @@ describe("🦈 & 🐅", function () {
         const revertErrorMessage = "Position is out of range";
 
         // acceptable range is 0 - 8
-        await expect(sharksAndTigersFactory.connect(walletOne).createGame(9, 1, {
+        await expect(sharksAndTigersFactory.connect(walletOne).createGame(9, 1, 10, {
+          value: ethers.parseEther("1.0")
+        })).to.be.revertedWith(revertErrorMessage);
+      });
+
+      it("should revert when play clock value not greater than 0", async function () {
+        const revertErrorMessage = "Must set a play clock value";
+
+        await expect(sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 0, {
           value: ethers.parseEther("1.0")
         })).to.be.revertedWith(revertErrorMessage);
       });
 
       it("should create a SharksAndTigers game when proper arguments and wager passed", async function () {
-        const newGame = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, {
+        const newGame = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
           value: ethers.parseEther("1.0"),
         });
 
@@ -73,7 +81,7 @@ describe("🦈 & 🐅", function () {
         // checks gameCount before creating new game
         const gameCountBefore = await sharksAndTigersFactory.gameCount();
 
-        const newGame = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, {
+        const newGame = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
           value: ethers.parseEther("1.0"),
         });
 
@@ -83,18 +91,18 @@ describe("🦈 & 🐅", function () {
         expect(Number(gameCountAfter - gameCountBefore)).to.be.equal(1);
       });
 
-      it("should emit GameCreated event with contract address and count", async function () {
+      it("should emit GameCreated event with player and game contract address, play clock, and game count", async function () {
         const walletOneAddr = await walletOne.getAddress();
 
-        const gameCreationResponse = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, {
+        const gameCreationResponse = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
           value: ethers.parseEther("1.0"),
         });
 
         const gameCreationReceipt = await gameCreationResponse.wait();
         // @ts-ignore
-        const [playerOneAddress, gameContractAddress, gameIdNumber] = gameCreationReceipt?.logs[0].args;
+        const [playerOneAddress, gameContractAddress, playClock, gameIdNumber] = gameCreationReceipt?.logs[0].args;
 
-        await expect(gameCreationReceipt).to.emit(sharksAndTigersFactory, "GameCreated").withArgs(playerOneAddress, gameContractAddress, gameIdNumber);
+        await expect(gameCreationReceipt).to.emit(sharksAndTigersFactory, "GameCreated").withArgs(playerOneAddress, gameContractAddress, playClock, gameIdNumber);
       });
     });
   });
@@ -105,7 +113,7 @@ describe("🦈 & 🐅", function () {
 
     beforeEach("before each test", async function (){
       /* Create GAME 1 */
-      const game1Res = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, {
+      const game1Res = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
         value: ethers.parseEther("1.0"),
       });
       const game1Rec = await game1Res.wait();
@@ -115,7 +123,7 @@ describe("🦈 & 🐅", function () {
       game1 = await ethers.getContractAt("SharksAndTigers", gameContract1);
 
       /* Create Game 2 */
-      const game2Res = await sharksAndTigersFactory.connect(walletTwo).createGame(5, 2, {
+      const game2Res = await sharksAndTigersFactory.connect(walletTwo).createGame(5, 2, 10, {
         value: ethers.parseEther("0.5"),
       });
       const game2Rec = await game2Res.wait();
@@ -514,6 +522,19 @@ describe("🦈 & 🐅", function () {
         await expect(game1.connect(walletThree).makeMove(3)).to.be.revertedWith(revertErrorMessage);
       })
 
+      it("should revert if play clock is exceeded", async function(){
+        // game 1 has a 10 second play clock
+        const timeDelay = 10;
+        
+        const revertErrorMessage = "You ran out of time to make a move";
+
+        await ethers.provider.getBlock(await ethers.provider.getBlockNumber());
+        await ethers.provider.send("evm_increaseTime", [timeDelay]);
+        await ethers.provider.send("evm_mine");
+
+        await expect(game1.connect(walletOne).makeMove(3)).to.be.revertedWith(revertErrorMessage);
+      })
+
       it("should set player's Mark on gameBoard in given position", async function(){
         /*
           Mark[9] public gameBoard;
@@ -895,6 +916,75 @@ describe("🦈 & 🐅", function () {
 
         expect(isRewardClaimed).to.equal(true);
       });
+
+      it("should payout to opponent of currentPlayer if playClock expired", async function(){
+        /* playerOne abandons the game as below:
+          | 🦈 | 🐅 | -- |
+          | 🦈 | 🐅 | -- |
+          | -- | -- | -- |
+        */
+
+        await game1.connect(walletOne).makeMove(3);
+        await game1.connect(walletThree).makeMove(4);
+
+        // game 1 has a 10 second play clock
+        const timeDelay = 10;
+
+        await ethers.provider.getBlock(await ethers.provider.getBlockNumber());
+        await ethers.provider.send("evm_increaseTime", [timeDelay]);
+        await ethers.provider.send("evm_mine");
+
+        // playerOne is currentPlayer
+        const walletOneAddr = await walletOne.getAddress();
+        const currentPlayer = await game1.currentPlayer();
+        expect(currentPlayer).to.equal(walletOneAddr);
+
+        // should fail to pay currentPlayer
+        const revertErrorMessage = "Only the winner can claim the reward";
+        await expect(game1.connect(walletOne).claimReward()).to.be.revertedWith(revertErrorMessage);
+
+        // should payout to opponent of currentPlayer
+        const walletThreeAddr = await walletThree.getAddress();
+        const initialBalance = await walletOne.provider?.getBalance(walletThreeAddr);
+
+        const rewardClaimReceipt = await game1.connect(walletThree).claimReward();
+        const endingBalance = await walletThree.provider?.getBalance(walletThreeAddr);
+
+        const txrec = await rewardClaimReceipt.wait();
+        const gasUsed = txrec?.gasUsed;
+        const gasPrice = txrec?.gasPrice;
+        const wagerGame1 = await game1.wager();
+
+        const gasCost = gasUsed * gasPrice;        
+        const totalReward = wagerGame1 + wagerGame1;
+        
+        expect(endingBalance).to.equal(initialBalance - gasCost + totalReward);
+      });
+
+      it("should should emit GameEnded event after successful claim when playClock expired", async function(){
+        /* playerOne abandons the game as below:
+          | 🦈 | 🐅 | -- |
+          | 🦈 | 🐅 | -- |
+          | -- | -- | -- |
+        */
+
+        await game1.connect(walletOne).makeMove(3);
+        await game1.connect(walletThree).makeMove(4);
+
+        // game 1 has a 10 second play clock
+        const timeDelay = 10;
+
+        await ethers.provider.getBlock(await ethers.provider.getBlockNumber());
+        await ethers.provider.send("evm_increaseTime", [timeDelay]);
+        await ethers.provider.send("evm_mine");
+
+        const game1Address = await game1.getAddress();
+        const walletOneAddr = await walletOne.getAddress();
+        const walletThreeAddr = await walletThree.getAddress();
+        const wager = await game1.wager();
+
+        await expect(game1.connect(walletThree).claimReward()).to.emit(game1, "GameEnded").withArgs(game1Address, walletOneAddr, walletThreeAddr, wager, walletThreeAddr, false);
+      });
     })
 
     describe("withdrawWager", function(){
@@ -924,14 +1014,15 @@ describe("🦈 & 🐅", function () {
         await game2.connect(walletTwo).makeMove(3);
       });
 
-      it("should revert if GameState is not ended", async function(){
-        const revertErrorMessage = "Game is not ended";
+      it("should revert if GameState is active", async function(){
+        const revertErrorMessage = "Cannot withdraw wager while game is active";
 
         // playerTwo
         await expect(game1.connect(walletThree).withdrawWager()).to.be.revertedWith(revertErrorMessage);
         // playerOne
         await expect(game1.connect(walletOne).withdrawWager()).to.be.revertedWith(revertErrorMessage);
       });
+
       it("should revert if game has a winner", async function(){
         const revertErrorMessage = "Game is not a draw, winner must call claimReward";
 
@@ -946,7 +1037,6 @@ describe("🦈 & 🐅", function () {
         await game1.connect(walletThree).makeMove(4);
         await game1.connect(walletOne).makeMove(6);
 
-
         const walletOneAddr = await walletOne.getAddress();
         const winner = await game1.winner();
 
@@ -955,6 +1045,7 @@ describe("🦈 & 🐅", function () {
         await expect(game1.connect(walletOne).withdrawWager()).to.be.revertedWith(revertErrorMessage);
         await expect(game1.connect(walletThree).withdrawWager()).to.be.revertedWith(revertErrorMessage);
       });
+
       it("should revert if player does not have a balance to withdraw", async function(){
         const revertErrorMessage = "Nothing to withdraw";
 
@@ -966,6 +1057,59 @@ describe("🦈 & 🐅", function () {
 
         // attempt to withdraw as a non-player
         await expect(game2.connect(walletOne).withdrawWager()).to.be.revertedWith(revertErrorMessage);
+      });
+
+      it("should should emit GameEnded event after wager withdrawn from an open game", async function(){
+        /* Create Game */
+        const gameRes = await sharksAndTigersFactory.connect(walletTwo).createGame(5, 2, 10, {
+          value: ethers.parseEther("3.14"),
+        });
+        const gameRec = await gameRes.wait();
+
+        // @ts-ignore
+        const [, gameContract,] = gameRec?.logs[0].args;
+        const game = await ethers.getContractAt("SharksAndTigers", gameContract);
+
+        const gameAddress = await game.getAddress();
+        const playerOneAddr = await game.playerOne();
+        const playerTwoAddr = await game.playerTwo();
+        const winner = await game.winner();
+        const wager = await game.wager();
+        const isDraw = await game.isDraw();
+
+        await expect(game.connect(walletTwo).withdrawWager()).to.emit(game, "GameEnded").withArgs(gameAddress, playerOneAddr, playerTwoAddr, wager, winner, isDraw);
+      });
+
+      it("should successfully transfer player's wager after withdraw", async function(){
+        const walletThreeAddr = await walletThree.getAddress();
+        const initialBalance = await walletThree.provider?.getBalance(walletThreeAddr);
+
+        /* Create Game */
+        const gameRes = await sharksAndTigersFactory.connect(walletThree).createGame(0, 1, 1, {
+          value: ethers.parseEther("1"),
+        });
+        const gameRec = await gameRes.wait();
+        const createGameGasUsed = gameRec?.gasUsed;
+        const createGameGasPrice = gameRec?.gasPrice;
+        const createGameGasCost = createGameGasUsed * createGameGasPrice;
+
+        // @ts-ignore
+        const [, gameContract,] = gameRec?.logs[0].args;
+        const game = await ethers.getContractAt("SharksAndTigers", gameContract);
+
+        const withdrawWagerResponse = await game.connect(walletThree).withdrawWager();
+        const endingBalance = await walletThree.provider?.getBalance(walletThreeAddr);
+
+        const withdrawWagerReceipt = await withdrawWagerResponse.wait();
+        const withdrawWagerGasUsed = withdrawWagerReceipt?.gasUsed;
+        const withdrawWagerGasPrice = withdrawWagerReceipt?.gasPrice;
+
+        const withdrawWagerGasCost = withdrawWagerGasUsed * withdrawWagerGasPrice;
+
+        const totalGasCost = createGameGasCost + withdrawWagerGasCost;
+        const balanceAfterGasCosts = initialBalance - totalGasCost;
+
+        expect(endingBalance).to.equal(balanceAfterGasCosts);
       });
     })
   })
