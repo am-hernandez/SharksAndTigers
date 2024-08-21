@@ -139,24 +139,47 @@ contract SharksAndTigers {
   function isWinningMove(uint position)private view returns(bool){
     // validate if this move is the winning move
     Mark playerMark = gameBoard[position];
-    uint row = position / 3; // determines the row of the move
-    uint col = position % 3; // determines the column of the move
+    uint row = (position / 3) * 3; // determines the row of the move
 
-    // Check row
-    if(gameBoard[row * 3] == playerMark &&
-      gameBoard[row * 3 + 1] == playerMark &&
-      gameBoard[row * 3 + 2] == playerMark){
+    /***************
+    ** Check rows **
+    ***************/
+
+    if(gameBoard[row] == playerMark &&
+      gameBoard[row + 1] == playerMark &&
+      gameBoard[row + 2] == playerMark){
         return true;
     }
 
-    // Check column
-    if(gameBoard[col * 3] == playerMark &&
-      gameBoard[col * 3 + 3] == playerMark &&
-      gameBoard[col * 3 + 6] == playerMark){
-        return true;
+    /******************
+    ** Check columns **
+    ******************/
+
+    // left column
+    if(gameBoard[0] == playerMark &&
+      gameBoard[3] == playerMark &&
+      gameBoard[6] == playerMark){
+      return true;
     }
 
-    // Check diagonals
+    // center column
+    if(gameBoard[1] == playerMark &&
+      gameBoard[4] == playerMark &&
+      gameBoard[7] == playerMark){
+      return true;
+    }
+
+    // right column
+    if(gameBoard[2] == playerMark &&
+      gameBoard[5] == playerMark &&
+      gameBoard[8] == playerMark){
+      return true;
+    }
+
+    /********************
+    ** Check diagonals **
+    ********************/
+
     if(position % 2 == 0){
         // Check first diagonal
         if(gameBoard[0] == playerMark &&
@@ -172,6 +195,7 @@ contract SharksAndTigers {
             return true;
         }
     }
+
     return false;
   }
 
