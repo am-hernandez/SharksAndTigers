@@ -91,18 +91,16 @@ describe("🦈 & 🐅", function () {
         expect(Number(gameCountAfter - gameCountBefore)).to.be.equal(1);
       });
 
-      it("should emit GameCreated event with player and game contract address, play clock, and game count", async function () {
-        const walletOneAddr = await walletOne.getAddress();
-
+      it("should emit GameCreated event with game id, gameContract, playerOne, _playerOneMark, firstMovePos, playclock, wager", async function () {
         const gameCreationResponse = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
           value: ethers.parseEther("1.0"),
         });
 
         const gameCreationReceipt = await gameCreationResponse.wait();
         // @ts-ignore
-        const [playerOneAddress, gameContractAddress, playClock, gameIdNumber] = gameCreationReceipt?.logs[0].args;
+        const [gameIdNumber, gameContractAddress, playerOneAddress, playerOneMark, position, playClock, wager] = gameCreationReceipt?.logs[0].args;
 
-        await expect(gameCreationReceipt).to.emit(sharksAndTigersFactory, "GameCreated").withArgs(playerOneAddress, gameContractAddress, playClock, gameIdNumber);
+        await expect(gameCreationReceipt).to.emit(sharksAndTigersFactory, "GameCreated").withArgs(gameIdNumber, gameContractAddress, playerOneAddress, playerOneMark, position, playClock, wager);
       });
     });
   });
@@ -451,12 +449,17 @@ describe("🦈 & 🐅", function () {
       })
       
       it("should emit PlayerTwoJoined event", async function(){
+        const gameId = 1;
         const game1Address = await game1.getAddress();
         const walletThreeAddr = await walletThree.getAddress();
+        const playerMark = "2";
+        const position = "6";
+        const playClock = "10";
+        const wager = ethers.parseEther("1.0");
 
         await expect(game1.connect(walletThree).joinGame(6, {
           value: ethers.parseEther("1.0"),
-        })).to.emit(game1, "PlayerTwoJoined").withArgs(game1Address, walletThreeAddr, 6);
+        })).to.emit(game1, "PlayerTwoJoined").withArgs(gameId, game1Address, walletThreeAddr, playerMark, position, playClock, wager);
       })
       
       it("should add playerTwo's wager to balances mapping", async function(){
@@ -576,11 +579,17 @@ describe("🦈 & 🐅", function () {
       })
       
       it("should emit MoveMade event", async function(){
+        const gameId = 1;
         const game1Address = await game1.getAddress();
         const walletOneAddr = await walletOne.getAddress();
+        const playerMark = 1;
         const movePosition = 6;
+        const playClock = 10;
+        const lastBlock = await ethers.provider.getBlock("latest");
+        const lastPlayTime = lastBlock?.timestamp! + 2;
+        const wager = ethers.parseEther("1.0");
 
-        await expect(game1.connect(walletOne).makeMove(movePosition)).to.emit(game1, "MoveMade").withArgs(game1Address, walletOneAddr, movePosition);
+        await expect(game1.connect(walletOne).makeMove(movePosition)).to.emit(game1, "MoveMade").withArgs(gameId, game1Address, walletOneAddr, playerMark, movePosition, playClock, lastPlayTime, wager);
       })
 
       it("should set message sender as winner if winning move is made", async function(){
@@ -700,12 +709,23 @@ describe("🦈 & 🐅", function () {
         await game1.connect(walletOne).makeMove(7);
         await game1.connect(walletThree).makeMove(1);
         
+        const gameId = 1;
         const game1Address = await game1.getAddress();
         const walletOneAddr = await walletOne.getAddress();
         const walletThreeAddr = await walletThree.getAddress();
+        const playerOneMark = 1;
+        const playerTwoMark = 2;
         const wager = await game1.wager();
+        const playClock = 10;
 
-        await expect(game1.connect(walletOne).makeMove(6)).to.emit(game1, "GameEnded").withArgs(game1Address, walletOneAddr, walletThreeAddr, wager, ethers.ZeroAddress, true);
+        const makeMoveTransaction = await game1.connect(walletOne).makeMove(6);
+        const receipt = await makeMoveTransaction.wait();
+        const transactionBlockNumber = receipt?.blockNumber;
+        const receiptBlock = await ethers.provider.getBlock(transactionBlockNumber!);
+        const lastPlayTime = receiptBlock?.timestamp;
+
+
+        await expect(makeMoveTransaction).to.emit(game1, "GameEnded").withArgs(gameId, game1Address, walletOneAddr, walletThreeAddr, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, false, ethers.ZeroAddress, true);
       })
 
       it("should emit GameEnded event when game is won", async function(){
@@ -720,13 +740,24 @@ describe("🦈 & 🐅", function () {
         await game1.connect(walletOne).makeMove(3);
         await game1.connect(walletThree).makeMove(5);
 
+        const gameId = 1;
         const game1Address = await game1.getAddress();
         const walletOneAddr = await walletOne.getAddress();
         const walletThreeAddr = await walletThree.getAddress();
+        const playerOneMark = 1;
+        const playerTwoMark = 2;
         const wager = await game1.wager();
-        const isDraw = await game1.isDraw();
-        
-        await expect(game1.connect(walletOne).makeMove(6)).to.emit(game1, "GameEnded").withArgs(game1Address, walletOneAddr, walletThreeAddr, wager, walletOneAddr, isDraw);
+        const playClock = 10;
+
+        const makeMoveTransaction = await game1.connect(walletOne).makeMove(6);
+        const receipt = await makeMoveTransaction.wait();
+        const transactionBlockNumber = receipt?.blockNumber;
+        const receiptBlock = await ethers.provider.getBlock(transactionBlockNumber!);
+        const lastPlayTime = receiptBlock?.timestamp;
+        const winner = await game1.winner();
+
+
+        await expect(makeMoveTransaction).to.emit(game1, "GameEnded").withArgs(gameId, game1Address, walletOneAddr, walletThreeAddr, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, false, winner, false);
       })
 
       describe("Should recognize all 8 winning scenarios", async () => {
@@ -1317,7 +1348,7 @@ describe("🦈 & 🐅", function () {
         */
 
         await game1.connect(walletOne).makeMove(3);
-        await game1.connect(walletThree).makeMove(4);
+        const makeMoveTransaction = await game1.connect(walletThree).makeMove(4);
 
         // game 1 has a 10 second play clock
         const timeDelay = 10;
@@ -1326,12 +1357,25 @@ describe("🦈 & 🐅", function () {
         await ethers.provider.send("evm_increaseTime", [timeDelay]);
         await ethers.provider.send("evm_mine");
 
+        const gameId = 1;
         const game1Address = await game1.getAddress();
         const walletOneAddr = await walletOne.getAddress();
         const walletThreeAddr = await walletThree.getAddress();
+        const playerOneMark = 1;
+        const playerTwoMark = 2;
         const wager = await game1.wager();
+        const playClock = 10;
 
-        await expect(game1.connect(walletThree).claimReward()).to.emit(game1, "GameEnded").withArgs(game1Address, walletOneAddr, walletThreeAddr, wager, walletThreeAddr, false);
+        const receipt = await makeMoveTransaction.wait();
+        const transactionBlockNumber = receipt?.blockNumber;
+        const receiptBlock = await ethers.provider.getBlock(transactionBlockNumber!);
+        const lastPlayTime = receiptBlock?.timestamp;
+
+        const claimRewardTransaction = await game1.connect(walletThree).claimReward();
+        await claimRewardTransaction.wait();
+        const winner = await game1.winner();
+
+        await expect(claimRewardTransaction).to.emit(game1, "GameEnded").withArgs(gameId, game1Address, walletOneAddr, walletThreeAddr, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, true, winner, false);
       });
     })
 
@@ -1418,14 +1462,20 @@ describe("🦈 & 🐅", function () {
         const [, gameContract,] = gameRec?.logs[0].args;
         const game = await ethers.getContractAt("SharksAndTigers", gameContract);
 
+        const gameId = 3;
         const gameAddress = await game.getAddress();
         const playerOneAddr = await game.playerOne();
         const playerTwoAddr = await game.playerTwo();
-        const winner = await game.winner();
+        const playerOneMark = 2;
+        const playerTwoMark = 1;
         const wager = await game.wager();
+        const playClock = 10;
+        const lastPlayTime = 0; // no player two joined
+        const isExpired = false;
+        const winner = await game.winner();
         const isDraw = await game.isDraw();
 
-        await expect(game.connect(walletTwo).withdrawWager()).to.emit(game, "GameEnded").withArgs(gameAddress, playerOneAddr, playerTwoAddr, wager, winner, isDraw);
+        await expect(game.connect(walletTwo).withdrawWager()).to.emit(game, "GameEnded").withArgs(gameId, gameAddress, playerOneAddr, playerTwoAddr, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, isExpired, winner, isDraw);
       });
 
       it("should successfully transfer player's wager after withdraw", async function(){
