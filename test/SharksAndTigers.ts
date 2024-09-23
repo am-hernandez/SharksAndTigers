@@ -1,4 +1,4 @@
-import { expect } from "chai";
+import { expect, assert } from "chai";
 import { ethers } from "hardhat";
 import { ContractRunner, Signer } from "ethers";
 import { SharksAndTigers, SharksAndTigersFactory } from "../typechain-types";
@@ -1510,5 +1510,80 @@ describe("🦈 & 🐅", function () {
         expect(endingBalance).to.equal(balanceAfterGasCosts);
       });
     })
+
+    describe("getGameInfo", function(){
+      beforeEach("before each test", async function (){
+        /* JOIN GAME 1 */
+        await game1.connect(walletThree).joinGame(1, {
+          value: ethers.parseEther("1.0")
+        })
+
+        /* JOIN GAME 2 */
+        await game2.connect(walletThree).joinGame(4, {
+          value: ethers.parseEther("0.5")
+        })
+        /* Will complete the game2 board as below:
+          | 🦈 | 🐅 | 🦈 |
+          | 🐅 | 🦈 | 🐅 |
+          | 🐅 | 🦈 | 🐅 |
+        */
+
+        // play the game to fill the board
+        await game2.connect(walletTwo).makeMove(8);
+        await game2.connect(walletThree).makeMove(2);
+        await game2.connect(walletTwo).makeMove(1);
+        await game2.connect(walletThree).makeMove(0);
+        await game2.connect(walletTwo).makeMove(6);
+        await game2.connect(walletThree).makeMove(7);
+        await game2.connect(walletTwo).makeMove(3);
+      });
+
+      it("should return the game contract info", async function() {
+        const makeMoveTransaction = await game1.connect(walletOne).makeMove(2);
+        const gameInfo =  await game1.connect(walletTwo).getGameInfo();
+
+        const makeMoveReceipt = await makeMoveTransaction.wait();
+        const transactionBlockNumber = makeMoveReceipt?.blockNumber;
+        const receiptBlock = await ethers.provider.getBlock(transactionBlockNumber!);
+        const lastPlayTime = receiptBlock?.timestamp;
+
+        const gameId = "1";
+        const walletOneAddr = await walletOne.getAddress();
+        const walletThreeAddr = await walletThree.getAddress();
+        const gameState = "1";
+        const playerOneMark = "1";
+        const playerTwoMark = "2";
+        const wager = ethers.parseEther("1");
+        const playClock = "10";
+        const gameBoard: [bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint] = [BigInt(1),BigInt(2),BigInt(1),BigInt(0),BigInt(0),BigInt(0),BigInt(0),BigInt(0),BigInt(0)];
+
+        const game = [
+          gameId,
+          wager,
+          playClock,
+          lastPlayTime?.toString(),
+          walletOneAddr,
+          walletThreeAddr,
+          walletThreeAddr,
+          ethers.ZeroAddress,
+          false,
+          false,
+          gameState,
+          playerOneMark,
+          playerTwoMark,
+          gameBoard
+        ];
+
+        for (let index = 0; index < gameInfo.length; index++) {
+          const element = gameInfo[index];
+
+          if(Array.isArray(element)){
+            assert.deepStrictEqual(element, gameBoard);
+          } else {
+            expect(gameInfo[index]).to.equal(game[index]);
+          }
+        }
+      });
+    });
   })
 });
