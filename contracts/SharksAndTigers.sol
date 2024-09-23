@@ -248,6 +248,10 @@ contract SharksAndTigers {
     require(sent, "transfer failed");
 
     if(isExpired){
+      // if game is expired 
+      // update game state after winner claims
+      gameState = GameState.Ended;
+
       emit GameEnded(gameId, address(this), playerOne, playerTwo, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, isExpired, winner, isDraw);
     }
   }
@@ -264,6 +268,10 @@ contract SharksAndTigers {
     require(sent, "transfer failed");
 
     if(gameState == GameState.Open){
+      // update game state after player one
+      // ends game by withdrawing wager
+      gameState = GameState.Ended;
+
       emit GameEnded(gameId, address(this), playerOne, playerTwo, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, false, winner, isDraw);
     }
   }
