@@ -70,6 +70,23 @@ contract SharksAndTigers {
     Tiger
   }
 
+  struct Game {
+    uint gameId;
+    uint256 wager;
+    uint256 playClock;
+    uint256 lastPlayTime;
+    address playerOne;
+    address playerTwo;
+    address currentPlayer;
+    address winner;
+    bool isDraw;
+    bool isRewardClaimed;
+    GameState gameState;
+    Mark playerOneMark;
+    Mark playerTwoMark;
+    Mark[9] gameBoard;
+  }
+
   constructor(address _playerOne, uint position, Mark mark, uint256 _playClock, uint _gameId) payable {
     gameId = _gameId;
     playerOne = _playerOne;
@@ -249,5 +266,26 @@ contract SharksAndTigers {
     if(gameState == GameState.Open){
       emit GameEnded(gameId, address(this), playerOne, playerTwo, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, false, winner, isDraw);
     }
+  }
+
+  function getGameInfo() public view returns(Game memory){
+    Game memory gameInfo = Game({
+      gameId: gameId,
+      wager: wager,
+      playClock: playClock,
+      lastPlayTime: lastPlayTime,
+      playerOne: playerOne,
+      playerTwo: playerTwo,
+      currentPlayer: currentPlayer,
+      winner: winner,
+      isDraw: isDraw,
+      isRewardClaimed: isRewardClaimed,
+      gameState: gameState,
+      playerOneMark: playerOneMark,
+      playerTwoMark: playerTwoMark,
+      gameBoard: gameBoard
+    });
+
+    return gameInfo;
   }
 }
