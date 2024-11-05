@@ -1,4 +1,4 @@
-import { expect } from "chai";
+import { expect, assert } from "chai";
 import { ethers } from "hardhat";
 import { ContractRunner, Signer } from "ethers";
 import { SharksAndTigers, SharksAndTigersFactory } from "../typechain-types";
@@ -91,18 +91,16 @@ describe("🦈 & 🐅", function () {
         expect(Number(gameCountAfter - gameCountBefore)).to.be.equal(1);
       });
 
-      it("should emit GameCreated event with player and game contract address, play clock, and game count", async function () {
-        const walletOneAddr = await walletOne.getAddress();
-
+      it("should emit GameCreated event with game id, gameContract, playerOne, _playerOneMark, firstMovePos, playclock, wager", async function () {
         const gameCreationResponse = await sharksAndTigersFactory.connect(walletOne).createGame(0, 1, 10, {
           value: ethers.parseEther("1.0"),
         });
 
         const gameCreationReceipt = await gameCreationResponse.wait();
         // @ts-ignore
-        const [playerOneAddress, gameContractAddress, playClock, gameIdNumber] = gameCreationReceipt?.logs[0].args;
+        const [gameIdNumber, gameContractAddress, playerOneAddress, playerOneMark, position, playClock, wager] = gameCreationReceipt?.logs[0].args;
 
-        await expect(gameCreationReceipt).to.emit(sharksAndTigersFactory, "GameCreated").withArgs(playerOneAddress, gameContractAddress, playClock, gameIdNumber);
+        await expect(gameCreationReceipt).to.emit(sharksAndTigersFactory, "GameCreated").withArgs(gameIdNumber, gameContractAddress, playerOneAddress, playerOneMark, position, playClock, wager);
       });
     });
   });
@@ -451,12 +449,17 @@ describe("🦈 & 🐅", function () {
       })
       
       it("should emit PlayerTwoJoined event", async function(){
+        const gameId = 1;
         const game1Address = await game1.getAddress();
         const walletThreeAddr = await walletThree.getAddress();
+        const playerMark = "2";
+        const position = "6";
+        const playClock = "10";
+        const wager = ethers.parseEther("1.0");
 
         await expect(game1.connect(walletThree).joinGame(6, {
           value: ethers.parseEther("1.0"),
-        })).to.emit(game1, "PlayerTwoJoined").withArgs(game1Address, walletThreeAddr, 6);
+        })).to.emit(game1, "PlayerTwoJoined").withArgs(gameId, game1Address, walletThreeAddr, playerMark, position, playClock, wager);
       })
       
       it("should add playerTwo's wager to balances mapping", async function(){
@@ -576,11 +579,17 @@ describe("🦈 & 🐅", function () {
       })
       
       it("should emit MoveMade event", async function(){
+        const gameId = 1;
         const game1Address = await game1.getAddress();
         const walletOneAddr = await walletOne.getAddress();
+        const playerMark = 1;
         const movePosition = 6;
+        const playClock = 10;
+        const lastBlock = await ethers.provider.getBlock("latest");
+        const lastPlayTime = lastBlock?.timestamp! + 2;
+        const wager = ethers.parseEther("1.0");
 
-        await expect(game1.connect(walletOne).makeMove(movePosition)).to.emit(game1, "MoveMade").withArgs(game1Address, walletOneAddr, movePosition);
+        await expect(game1.connect(walletOne).makeMove(movePosition)).to.emit(game1, "MoveMade").withArgs(gameId, game1Address, walletOneAddr, playerMark, movePosition, playClock, lastPlayTime, wager);
       })
 
       it("should set message sender as winner if winning move is made", async function(){
@@ -700,12 +709,23 @@ describe("🦈 & 🐅", function () {
         await game1.connect(walletOne).makeMove(7);
         await game1.connect(walletThree).makeMove(1);
         
+        const gameId = 1;
         const game1Address = await game1.getAddress();
         const walletOneAddr = await walletOne.getAddress();
         const walletThreeAddr = await walletThree.getAddress();
+        const playerOneMark = 1;
+        const playerTwoMark = 2;
         const wager = await game1.wager();
+        const playClock = 10;
 
-        await expect(game1.connect(walletOne).makeMove(6)).to.emit(game1, "GameEnded").withArgs(game1Address, walletOneAddr, walletThreeAddr, wager, ethers.ZeroAddress, true);
+        const makeMoveTransaction = await game1.connect(walletOne).makeMove(6);
+        const receipt = await makeMoveTransaction.wait();
+        const transactionBlockNumber = receipt?.blockNumber;
+        const receiptBlock = await ethers.provider.getBlock(transactionBlockNumber!);
+        const lastPlayTime = receiptBlock?.timestamp;
+
+
+        await expect(makeMoveTransaction).to.emit(game1, "GameEnded").withArgs(gameId, game1Address, walletOneAddr, walletThreeAddr, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, false, ethers.ZeroAddress, true);
       })
 
       it("should emit GameEnded event when game is won", async function(){
@@ -720,14 +740,373 @@ describe("🦈 & 🐅", function () {
         await game1.connect(walletOne).makeMove(3);
         await game1.connect(walletThree).makeMove(5);
 
+        const gameId = 1;
         const game1Address = await game1.getAddress();
         const walletOneAddr = await walletOne.getAddress();
         const walletThreeAddr = await walletThree.getAddress();
+        const playerOneMark = 1;
+        const playerTwoMark = 2;
         const wager = await game1.wager();
-        const isDraw = await game1.isDraw();
-        
-        await expect(game1.connect(walletOne).makeMove(6)).to.emit(game1, "GameEnded").withArgs(game1Address, walletOneAddr, walletThreeAddr, wager, walletOneAddr, isDraw);
+        const playClock = 10;
+
+        const makeMoveTransaction = await game1.connect(walletOne).makeMove(6);
+        const receipt = await makeMoveTransaction.wait();
+        const transactionBlockNumber = receipt?.blockNumber;
+        const receiptBlock = await ethers.provider.getBlock(transactionBlockNumber!);
+        const lastPlayTime = receiptBlock?.timestamp;
+        const winner = await game1.winner();
+
+
+        await expect(makeMoveTransaction).to.emit(game1, "GameEnded").withArgs(gameId, game1Address, walletOneAddr, walletThreeAddr, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, false, winner, false);
       })
+
+      describe("Should recognize all 8 winning scenarios", async () => {
+        /* There are 8 ways to win the game */
+
+        it("Scenario #1: Left Column", async () => {
+          /* Scenario #1
+            | 🦈 | -- | 🐅 |
+            | 🦈 | -- | 🐅 |
+            | 🦈 | -- | -- |
+          */
+
+          // playerOne
+          const walletOneAddr = await walletOne.getAddress();
+
+          /* playerOne createGame */
+          const gameContractRes = await sharksAndTigersFactory
+            .connect(walletOne)
+            .createGame(0, 1, 10, {
+              value: ethers.parseEther("1.0"),
+            });
+          const gameContractRec = await gameContractRes.wait();
+
+          // @ts-ignore
+          const [, gameContractAddress] = gameContractRec?.logs[0].args;
+          const gameContract = await ethers.getContractAt(
+            "SharksAndTigers",
+            gameContractAddress
+          );
+
+          // playerTwo joinGame
+          await gameContract.connect(walletTwo).joinGame(2, {
+            value: ethers.parseEther("1.0"),
+          });
+
+          // playerOne makeMove
+          await gameContract.connect(walletOne).makeMove(3);
+          // playerTwo makeMove
+          await gameContract.connect(walletTwo).makeMove(5);
+          // playerOne makeMove - winning move
+          await gameContract.connect(walletOne).makeMove(6);
+
+          const winner = await gameContract.winner();
+          expect(winner).to.equal(walletOneAddr);
+          const gameState = await gameContract.gameState();
+          expect(gameState.toString()).to.equal("2");
+        });
+
+        it("Scenario #2: Center Column", async () => {
+          /* Scenario #2
+            | -- | 🦈 | 🐅 |
+            | -- | 🦈 | 🐅 |
+            | -- | 🦈 | -- |
+          */
+
+          // playerOne
+          const walletOneAddr = await walletOne.getAddress();
+
+          /* playerOne createGame */
+          const gameContractRes = await sharksAndTigersFactory
+            .connect(walletOne)
+            .createGame(1, 1, 10, {
+              value: ethers.parseEther("1.0"),
+            });
+          const gameContractRec = await gameContractRes.wait();
+
+          // @ts-ignore
+          const [, gameContractAddress] = gameContractRec?.logs[0].args;
+          const gameContract = await ethers.getContractAt(
+            "SharksAndTigers",
+            gameContractAddress
+          );
+
+          // playerTwo joinGame
+          await gameContract.connect(walletTwo).joinGame(2, {
+            value: ethers.parseEther("1.0"),
+          });
+
+          // playerOne makeMove
+          await gameContract.connect(walletOne).makeMove(4);
+          // playerTwo makeMove
+          await gameContract.connect(walletTwo).makeMove(5);
+          // playerOne makeMove - winning move
+          await gameContract.connect(walletOne).makeMove(7);
+
+          const winner = await gameContract.winner();
+          expect(winner).to.equal(walletOneAddr);
+          const gameState = await gameContract.gameState();
+          expect(gameState.toString()).to.equal("2");
+        });
+
+        it("Scenario #3: Right Column", async () => {
+          /* Scenario #3
+            | 🐅 | -- | 🦈 |
+            | 🐅 | -- | 🦈 |
+            | -- | -- | 🦈 |
+          */
+
+          // playerOne
+          const walletOneAddr = await walletOne.getAddress();
+
+          /* playerOne createGame */
+          const gameContractRes = await sharksAndTigersFactory
+            .connect(walletOne)
+            .createGame(2, 1, 10, {
+              value: ethers.parseEther("1.0"),
+            });
+          const gameContractRec = await gameContractRes.wait();
+
+          // @ts-ignore
+          const [, gameContractAddress] = gameContractRec?.logs[0].args;
+          const gameContract = await ethers.getContractAt(
+            "SharksAndTigers",
+            gameContractAddress
+          );
+
+          // playerTwo joinGame
+          await gameContract.connect(walletTwo).joinGame(0, {
+            value: ethers.parseEther("1.0"),
+          });
+
+          // playerOne makeMove
+          await gameContract.connect(walletOne).makeMove(5);
+          // playerTwo makeMove
+          await gameContract.connect(walletTwo).makeMove(3);
+          // playerOne makeMove - winning move
+          await gameContract.connect(walletOne).makeMove(8);
+
+          const winner = await gameContract.winner();
+          expect(winner).to.equal(walletOneAddr);
+          const gameState = await gameContract.gameState();
+          expect(gameState.toString()).to.equal("2");
+        });
+
+        it("Scenario #4: Top Row", async () => {
+          /* Scenario #4
+            | 🦈 | 🦈 | 🦈 |
+            | -- | -- | -- |
+            | 🐅 | 🐅 | -- |
+          */
+
+          // playerOne
+          const walletOneAddr = await walletOne.getAddress();
+
+          /* playerOne createGame */
+          const gameContractRes = await sharksAndTigersFactory
+            .connect(walletOne)
+            .createGame(0, 1, 10, {
+              value: ethers.parseEther("1.0"),
+            });
+          const gameContractRec = await gameContractRes.wait();
+
+          // @ts-ignore
+          const [, gameContractAddress] = gameContractRec?.logs[0].args;
+          const gameContract = await ethers.getContractAt(
+            "SharksAndTigers",
+            gameContractAddress
+          );
+
+          // playerTwo joinGame
+          await gameContract.connect(walletTwo).joinGame(6, {
+            value: ethers.parseEther("1.0"),
+          });
+
+          // playerOne makeMove
+          await gameContract.connect(walletOne).makeMove(1);
+          // playerTwo makeMove
+          await gameContract.connect(walletTwo).makeMove(7);
+          // playerOne makeMove - winning move
+          await gameContract.connect(walletOne).makeMove(2);
+
+          const winner = await gameContract.winner();
+          expect(winner).to.equal(walletOneAddr);
+          const gameState = await gameContract.gameState();
+          expect(gameState.toString()).to.equal("2");
+        });
+
+        it("Scenario #5: Center Row", async () => {
+          /* Scenario #5
+            | -- | -- | -- |
+            | 🦈 | 🦈 | 🦈 |
+            | 🐅 | 🐅 | -- |
+          */
+
+          // playerOne
+          const walletOneAddr = await walletOne.getAddress();
+
+          /* playerOne createGame */
+          const gameContractRes = await sharksAndTigersFactory
+            .connect(walletOne)
+            .createGame(3, 1, 10, {
+              value: ethers.parseEther("1.0"),
+            });
+          const gameContractRec = await gameContractRes.wait();
+
+          // @ts-ignore
+          const [, gameContractAddress] = gameContractRec?.logs[0].args;
+          const gameContract = await ethers.getContractAt(
+            "SharksAndTigers",
+            gameContractAddress
+          );
+
+          // playerTwo joinGame
+          await gameContract.connect(walletTwo).joinGame(6, {
+            value: ethers.parseEther("1.0"),
+          });
+
+          // playerOne makeMove
+          await gameContract.connect(walletOne).makeMove(4);
+          // playerTwo makeMove
+          await gameContract.connect(walletTwo).makeMove(7);
+          // playerOne makeMove - winning move
+          await gameContract.connect(walletOne).makeMove(5);
+
+          const winner = await gameContract.winner();
+          expect(winner).to.equal(walletOneAddr);
+          const gameState = await gameContract.gameState();
+          expect(gameState.toString()).to.equal("2");
+        });
+
+        it("Scenario #6: Bottom Row", async () => {
+          /* Scenario #6
+            | 🐅 | 🐅 | -- |
+            | -- | -- | -- |
+            | 🦈 | 🦈 | 🦈 |
+          */
+
+          // playerOne
+          const walletOneAddr = await walletOne.getAddress();
+
+          /* playerOne createGame */
+          const gameContractRes = await sharksAndTigersFactory
+            .connect(walletOne)
+            .createGame(6, 1, 10, {
+              value: ethers.parseEther("1.0"),
+            });
+          const gameContractRec = await gameContractRes.wait();
+
+          // @ts-ignore
+          const [, gameContractAddress] = gameContractRec?.logs[0].args;
+          const gameContract = await ethers.getContractAt(
+            "SharksAndTigers",
+            gameContractAddress
+          );
+
+          // playerTwo joinGame
+          await gameContract.connect(walletTwo).joinGame(0, {
+            value: ethers.parseEther("1.0"),
+          });
+
+          // playerOne makeMove
+          await gameContract.connect(walletOne).makeMove(7);
+          // playerTwo makeMove
+          await gameContract.connect(walletTwo).makeMove(1);
+          // playerOne makeMove - winning move
+          await gameContract.connect(walletOne).makeMove(8);
+
+          const winner = await gameContract.winner();
+          expect(winner).to.equal(walletOneAddr);
+          const gameState = await gameContract.gameState();
+          expect(gameState.toString()).to.equal("2");
+        });
+
+        it("Scenario #7: Left Diagonal", async () => {
+          /* Scenario #7
+            | 🐅 | 🐅 | 🦈 |
+            | -- | 🦈 | -- |
+            | 🦈 | -- | -- |
+          */
+
+          // playerOne
+          const walletOneAddr = await walletOne.getAddress();
+
+          /* playerOne createGame */
+          const gameContractRes = await sharksAndTigersFactory
+            .connect(walletOne)
+            .createGame(2, 1, 10, {
+              value: ethers.parseEther("1.0"),
+            });
+          const gameContractRec = await gameContractRes.wait();
+
+          // @ts-ignore
+          const [, gameContractAddress] = gameContractRec?.logs[0].args;
+          const gameContract = await ethers.getContractAt(
+            "SharksAndTigers",
+            gameContractAddress
+          );
+
+          // playerTwo joinGame
+          await gameContract.connect(walletTwo).joinGame(0, {
+            value: ethers.parseEther("1.0"),
+          });
+
+          // playerOne makeMove
+          await gameContract.connect(walletOne).makeMove(4);
+          // playerTwo makeMove
+          await gameContract.connect(walletTwo).makeMove(1);
+          // playerOne makeMove - winning move
+          await gameContract.connect(walletOne).makeMove(6);
+
+          const winner = await gameContract.winner();
+          expect(winner).to.equal(walletOneAddr);
+          const gameState = await gameContract.gameState();
+          expect(gameState.toString()).to.equal("2");
+        });
+
+        it("Scenario #8: Right Diagonal", async () => {
+          /* Scenario #8
+            | 🦈 | 🐅 | 🐅 |
+            | -- | 🦈 | -- |
+            | -- | -- | 🦈 |
+          */
+
+          // playerOne
+          const walletOneAddr = await walletOne.getAddress();
+
+          /* playerOne createGame */
+          const gameContractRes = await sharksAndTigersFactory
+            .connect(walletOne)
+            .createGame(0, 1, 10, {
+              value: ethers.parseEther("1.0"),
+            });
+          const gameContractRec = await gameContractRes.wait();
+
+          // @ts-ignore
+          const [, gameContractAddress] = gameContractRec?.logs[0].args;
+          const gameContract = await ethers.getContractAt(
+            "SharksAndTigers",
+            gameContractAddress
+          );
+
+          // playerTwo joinGame
+          await gameContract.connect(walletTwo).joinGame(1, {
+            value: ethers.parseEther("1.0"),
+          });
+
+          // playerOne makeMove
+          await gameContract.connect(walletOne).makeMove(4);
+          // playerTwo makeMove
+          await gameContract.connect(walletTwo).makeMove(2);
+          // playerOne makeMove - winning move
+          await gameContract.connect(walletOne).makeMove(8);
+
+          const winner = await gameContract.winner();
+          expect(winner).to.equal(walletOneAddr);
+          const gameState = await gameContract.gameState();
+          expect(gameState.toString()).to.equal("2");
+        });
+      });
     })
 
     describe("claimReward", function(){
@@ -969,7 +1348,7 @@ describe("🦈 & 🐅", function () {
         */
 
         await game1.connect(walletOne).makeMove(3);
-        await game1.connect(walletThree).makeMove(4);
+        const makeMoveTransaction = await game1.connect(walletThree).makeMove(4);
 
         // game 1 has a 10 second play clock
         const timeDelay = 10;
@@ -978,12 +1357,25 @@ describe("🦈 & 🐅", function () {
         await ethers.provider.send("evm_increaseTime", [timeDelay]);
         await ethers.provider.send("evm_mine");
 
+        const gameId = 1;
         const game1Address = await game1.getAddress();
         const walletOneAddr = await walletOne.getAddress();
         const walletThreeAddr = await walletThree.getAddress();
+        const playerOneMark = 1;
+        const playerTwoMark = 2;
         const wager = await game1.wager();
+        const playClock = 10;
 
-        await expect(game1.connect(walletThree).claimReward()).to.emit(game1, "GameEnded").withArgs(game1Address, walletOneAddr, walletThreeAddr, wager, walletThreeAddr, false);
+        const receipt = await makeMoveTransaction.wait();
+        const transactionBlockNumber = receipt?.blockNumber;
+        const receiptBlock = await ethers.provider.getBlock(transactionBlockNumber!);
+        const lastPlayTime = receiptBlock?.timestamp;
+
+        const claimRewardTransaction = await game1.connect(walletThree).claimReward();
+        await claimRewardTransaction.wait();
+        const winner = await game1.winner();
+
+        await expect(claimRewardTransaction).to.emit(game1, "GameEnded").withArgs(gameId, game1Address, walletOneAddr, walletThreeAddr, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, true, winner, false);
       });
     })
 
@@ -1070,14 +1462,20 @@ describe("🦈 & 🐅", function () {
         const [, gameContract,] = gameRec?.logs[0].args;
         const game = await ethers.getContractAt("SharksAndTigers", gameContract);
 
+        const gameId = 3;
         const gameAddress = await game.getAddress();
         const playerOneAddr = await game.playerOne();
         const playerTwoAddr = await game.playerTwo();
-        const winner = await game.winner();
+        const playerOneMark = 2;
+        const playerTwoMark = 1;
         const wager = await game.wager();
+        const playClock = 10;
+        const lastPlayTime = 0; // no player two joined
+        const isExpired = false;
+        const winner = await game.winner();
         const isDraw = await game.isDraw();
 
-        await expect(game.connect(walletTwo).withdrawWager()).to.emit(game, "GameEnded").withArgs(gameAddress, playerOneAddr, playerTwoAddr, wager, winner, isDraw);
+        await expect(game.connect(walletTwo).withdrawWager()).to.emit(game, "GameEnded").withArgs(gameId, gameAddress, playerOneAddr, playerTwoAddr, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, isExpired, winner, isDraw);
       });
 
       it("should successfully transfer player's wager after withdraw", async function(){
@@ -1112,5 +1510,80 @@ describe("🦈 & 🐅", function () {
         expect(endingBalance).to.equal(balanceAfterGasCosts);
       });
     })
+
+    describe("getGameInfo", function(){
+      beforeEach("before each test", async function (){
+        /* JOIN GAME 1 */
+        await game1.connect(walletThree).joinGame(1, {
+          value: ethers.parseEther("1.0")
+        })
+
+        /* JOIN GAME 2 */
+        await game2.connect(walletThree).joinGame(4, {
+          value: ethers.parseEther("0.5")
+        })
+        /* Will complete the game2 board as below:
+          | 🦈 | 🐅 | 🦈 |
+          | 🐅 | 🦈 | 🐅 |
+          | 🐅 | 🦈 | 🐅 |
+        */
+
+        // play the game to fill the board
+        await game2.connect(walletTwo).makeMove(8);
+        await game2.connect(walletThree).makeMove(2);
+        await game2.connect(walletTwo).makeMove(1);
+        await game2.connect(walletThree).makeMove(0);
+        await game2.connect(walletTwo).makeMove(6);
+        await game2.connect(walletThree).makeMove(7);
+        await game2.connect(walletTwo).makeMove(3);
+      });
+
+      it("should return the game contract info", async function() {
+        const makeMoveTransaction = await game1.connect(walletOne).makeMove(2);
+        const gameInfo =  await game1.connect(walletTwo).getGameInfo();
+
+        const makeMoveReceipt = await makeMoveTransaction.wait();
+        const transactionBlockNumber = makeMoveReceipt?.blockNumber;
+        const receiptBlock = await ethers.provider.getBlock(transactionBlockNumber!);
+        const lastPlayTime = receiptBlock?.timestamp;
+
+        const gameId = "1";
+        const walletOneAddr = await walletOne.getAddress();
+        const walletThreeAddr = await walletThree.getAddress();
+        const gameState = "1";
+        const playerOneMark = "1";
+        const playerTwoMark = "2";
+        const wager = ethers.parseEther("1");
+        const playClock = "10";
+        const gameBoard: [bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint] = [BigInt(1),BigInt(2),BigInt(1),BigInt(0),BigInt(0),BigInt(0),BigInt(0),BigInt(0),BigInt(0)];
+
+        const game = [
+          gameId,
+          wager,
+          playClock,
+          lastPlayTime?.toString(),
+          walletOneAddr,
+          walletThreeAddr,
+          walletThreeAddr,
+          ethers.ZeroAddress,
+          false,
+          false,
+          gameState,
+          playerOneMark,
+          playerTwoMark,
+          gameBoard
+        ];
+
+        for (let index = 0; index < gameInfo.length; index++) {
+          const element = gameInfo[index];
+
+          if(Array.isArray(element)){
+            assert.deepStrictEqual(element, gameBoard);
+          } else {
+            expect(gameInfo[index]).to.equal(game[index]);
+          }
+        }
+      });
+    });
   })
 });

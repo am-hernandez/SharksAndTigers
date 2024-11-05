@@ -5,21 +5,21 @@ pragma solidity ^0.8.19;
 contract SharksAndTigersFactory {
   uint public gameCount = 0;
 
-  event GameCreated(address playerOne, address gameContract, uint256 playclock, uint indexed id);
+  event GameCreated(uint indexed gameId, address indexed gameContract, address indexed playerOne, SharksAndTigers.Mark _playerOneMark, uint position, uint256 playclock, uint256 wager);
 
-  function createGame(uint firstMovePos, uint _playerOneMark, uint256 playClock) public payable{
+  function createGame(uint position, uint _playerOneMark, uint256 playClock) public payable{
     require(_playerOneMark == 1 || _playerOneMark == 2, "Invalid mark for board");
     require(msg.value > 0, "Game creation requires a wager");
-    require(firstMovePos >= 0 && firstMovePos < 9, "Position is out of range");
+    require(position >= 0 && position < 9, "Position is out of range");
     require(playClock > 0, "Must set a play clock value");
 
     SharksAndTigers.Mark playerOneMark = SharksAndTigers.Mark(_playerOneMark);
 
-    SharksAndTigers game = (new SharksAndTigers){value: msg.value}(msg.sender, firstMovePos, playerOneMark, playClock);
-
     gameCount++;
 
-    emit GameCreated(msg.sender, address(game), playClock, gameCount);
+    SharksAndTigers game = (new SharksAndTigers){value: msg.value}(msg.sender, position, playerOneMark, playClock, gameCount);
+
+    emit GameCreated(gameCount, address(game), msg.sender, playerOneMark, position, playClock, msg.value);
   }
 }
 
@@ -38,6 +38,7 @@ contract SharksAndTigersFactory {
   - Mark enum (T, S, empty)
 */
 contract SharksAndTigers {
+  uint public gameId;
   uint256 public wager;
   uint256 public playClock;
   uint256 public lastPlayTime;
@@ -53,9 +54,9 @@ contract SharksAndTigers {
   Mark[9] public gameBoard;
   mapping(address => uint256) public balances;
 
-  event PlayerTwoJoined(address gameContract, address playerTwo, uint position);
-  event MoveMade(address gameContract, address player, uint position);
-  event GameEnded(address gameContract, address playerOne, address playerTwo, uint256 wager, address winner, bool isDraw);
+  event PlayerTwoJoined(uint indexed gameId, address indexed gameContract, address indexed playerTwo, Mark playerTwoMark, uint position, uint256 playClock, uint256 wager);
+  event MoveMade(uint indexed gameId, address indexed gameContract, address indexed player, Mark playerMark, uint position, uint256 playClock, uint256 lastPlayTime, uint256 wager);
+  event GameEnded(uint indexed gameId, address indexed gameContract, address playerOne, address playerTwo, Mark playerOneMark, Mark playerTwoMark, uint256 wager, uint256 playClock, uint256 lastPlayTime, bool isExpired, address indexed winner, bool isDraw);
 
   enum GameState {
     Open,
@@ -69,7 +70,25 @@ contract SharksAndTigers {
     Tiger
   }
 
-  constructor(address _playerOne, uint position, Mark mark, uint256 _playClock) payable {
+  struct Game {
+    uint gameId;
+    uint256 wager;
+    uint256 playClock;
+    uint256 lastPlayTime;
+    address playerOne;
+    address playerTwo;
+    address currentPlayer;
+    address winner;
+    bool isDraw;
+    bool isRewardClaimed;
+    GameState gameState;
+    Mark playerOneMark;
+    Mark playerTwoMark;
+    Mark[9] gameBoard;
+  }
+
+  constructor(address _playerOne, uint position, Mark mark, uint256 _playClock, uint _gameId) payable {
+    gameId = _gameId;
     playerOne = _playerOne;
     gameState = GameState.Open;
     wager = msg.value;
@@ -100,7 +119,7 @@ contract SharksAndTigers {
     currentPlayer = playerOne;
     lastPlayTime = block.timestamp;
 
-    emit PlayerTwoJoined(address(this) ,playerTwo, position);    
+    emit PlayerTwoJoined(gameId, address(this), playerTwo, playerTwoMark, position, playClock, wager);    
   }
 
   function makeMove(uint position) public validatePlayerMove(position){
@@ -125,38 +144,61 @@ contract SharksAndTigers {
       // game is won
       gameState = GameState.Ended;
       winner = msg.sender;
-      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw);
+      emit GameEnded(gameId, address(this), playerOne, playerTwo, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, false, winner, isDraw);
     } else if(isBoardFull()){
       // game is a draw
       gameState = GameState.Ended;
       isDraw = true;
-      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw);
+      emit GameEnded(gameId, address(this), playerOne, playerTwo, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, false, winner, isDraw);
     } else {
-      emit MoveMade(address(this), msg.sender, position);
+      emit MoveMade(gameId, address(this), msg.sender, playMark, position, playClock, lastPlayTime, wager);
     }
   }
 
   function isWinningMove(uint position)private view returns(bool){
     // validate if this move is the winning move
     Mark playerMark = gameBoard[position];
-    uint row = position / 3; // determines the row of the move
-    uint col = position % 3; // determines the column of the move
+    uint row = (position / 3) * 3; // determines the row of the move
 
-    // Check row
-    if(gameBoard[row * 3] == playerMark &&
-      gameBoard[row * 3 + 1] == playerMark &&
-      gameBoard[row * 3 + 2] == playerMark){
+    /***************
+    ** Check rows **
+    ***************/
+
+    if(gameBoard[row] == playerMark &&
+      gameBoard[row + 1] == playerMark &&
+      gameBoard[row + 2] == playerMark){
         return true;
     }
 
-    // Check column
-    if(gameBoard[col * 3] == playerMark &&
-      gameBoard[col * 3 + 3] == playerMark &&
-      gameBoard[col * 3 + 6] == playerMark){
-        return true;
+    /******************
+    ** Check columns **
+    ******************/
+
+    // left column
+    if(gameBoard[0] == playerMark &&
+      gameBoard[3] == playerMark &&
+      gameBoard[6] == playerMark){
+      return true;
     }
 
-    // Check diagonals
+    // center column
+    if(gameBoard[1] == playerMark &&
+      gameBoard[4] == playerMark &&
+      gameBoard[7] == playerMark){
+      return true;
+    }
+
+    // right column
+    if(gameBoard[2] == playerMark &&
+      gameBoard[5] == playerMark &&
+      gameBoard[8] == playerMark){
+      return true;
+    }
+
+    /********************
+    ** Check diagonals **
+    ********************/
+
     if(position % 2 == 0){
         // Check first diagonal
         if(gameBoard[0] == playerMark &&
@@ -172,6 +214,7 @@ contract SharksAndTigers {
             return true;
         }
     }
+
     return false;
   }
 
@@ -205,7 +248,11 @@ contract SharksAndTigers {
     require(sent, "transfer failed");
 
     if(isExpired){
-      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw);
+      // if game is expired 
+      // update game state after winner claims
+      gameState = GameState.Ended;
+
+      emit GameEnded(gameId, address(this), playerOne, playerTwo, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, isExpired, winner, isDraw);
     }
   }
 
@@ -221,7 +268,32 @@ contract SharksAndTigers {
     require(sent, "transfer failed");
 
     if(gameState == GameState.Open){
-      emit GameEnded(address(this), playerOne, playerTwo, wager, winner, isDraw);
+      // update game state after player one
+      // ends game by withdrawing wager
+      gameState = GameState.Ended;
+
+      emit GameEnded(gameId, address(this), playerOne, playerTwo, playerOneMark, playerTwoMark, wager, playClock, lastPlayTime, false, winner, isDraw);
     }
+  }
+
+  function getGameInfo() public view returns(Game memory){
+    Game memory gameInfo = Game({
+      gameId: gameId,
+      wager: wager,
+      playClock: playClock,
+      lastPlayTime: lastPlayTime,
+      playerOne: playerOne,
+      playerTwo: playerTwo,
+      currentPlayer: currentPlayer,
+      winner: winner,
+      isDraw: isDraw,
+      isRewardClaimed: isRewardClaimed,
+      gameState: gameState,
+      playerOneMark: playerOneMark,
+      playerTwoMark: playerTwoMark,
+      gameBoard: gameBoard
+    });
+
+    return gameInfo;
   }
 }
