@@ -1,14 +1,41 @@
-node_modules
-.env
+# --- Node / JS ---
+node_modules/
+dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Hardhat files
+# --- Env & secrets ---
+.env
+.env.*
+!.env.example
+
+# --- OS cruft ---
+.DS_Store
+Thumbs.db
+
+# --- Editors ---
+.vscode/
+.idea/
+
+# --- Foundry ---
+out/
+cache/
+broadcast/
+.forge-snapshot
+
+# --- Hardhat ---
+artifacts/
+cache-hh/
 /cache
 /artifacts
 
-# TypeChain files
+# --- TypeChain ---
 /typechain
 /typechain-types
 
-# solidity-coverage files
+# --- solidity-coverage ---
 /coverage
 /coverage.json
