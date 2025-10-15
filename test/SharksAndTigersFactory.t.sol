@@ -57,10 +57,7 @@ contract SharksAndTigersFactoryTest is Test {
 
         // Assert game is Open for joining
         SharksAndTigers game = SharksAndTigers(gameAddr);
-        assertEq(
-            uint256(game.gameState()),
-            uint256(SharksAndTigers.GameState.Open)
-        );
+        assertEq(uint256(game.gameState()), uint256(SharksAndTigers.GameState.Open));
     }
 
     function test_createGame_emitsEvent_andMappingSet() public {
@@ -70,29 +67,17 @@ contract SharksAndTigersFactoryTest is Test {
         factory.createGame(0, 1);
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
-        bytes32 sig = keccak256(
-            "GameCreated(uint256,address,address,uint8,uint256)"
-        );
+        bytes32 sig = keccak256("GameCreated(uint256,address,address,uint8,uint256)");
 
         bool found;
         for (uint256 i; i < entries.length; i++) {
-            if (
-                entries[i].emitter == address(factory) &&
-                entries[i].topics.length == 4 &&
-                entries[i].topics[0] == sig
-            ) {
+            if (entries[i].emitter == address(factory) && entries[i].topics.length == 4 && entries[i].topics[0] == sig)
+            {
                 found = true;
                 uint256 gameId = uint256(entries[i].topics[1]);
-                address gameContract = address(
-                    uint160(uint256(entries[i].topics[2]))
-                );
-                address playerOneAddr = address(
-                    uint160(uint256(entries[i].topics[3]))
-                );
-                (uint8 playerOneMark, uint256 position) = abi.decode(
-                    entries[i].data,
-                    (uint8, uint256)
-                );
+                address gameContract = address(uint160(uint256(entries[i].topics[2])));
+                address playerOneAddr = address(uint160(uint256(entries[i].topics[3])));
+                (uint8 playerOneMark, uint256 position) = abi.decode(entries[i].data, (uint8, uint256));
 
                 assertEq(gameId, 1);
                 assertEq(gameContract, factory.getGameAddress(gameId));

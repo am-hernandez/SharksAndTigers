@@ -16,35 +16,19 @@ contract SharksAndTigersFactory {
     );
 
     function createGame(uint256 position, uint256 _playerOneMark) external {
-        require(
-            _playerOneMark == 1 || _playerOneMark == 2,
-            "Invalid mark for board"
-        );
+        require(_playerOneMark == 1 || _playerOneMark == 2, "Invalid mark for board");
         require(position < 9, "Position is out of range");
 
-        SharksAndTigers.Mark playerOneMark = SharksAndTigers.Mark(
-            _playerOneMark
-        );
+        SharksAndTigers.Mark playerOneMark = SharksAndTigers.Mark(_playerOneMark);
 
         gameCount++;
 
-        SharksAndTigers game = new SharksAndTigers(
-            msg.sender,
-            position,
-            playerOneMark,
-            gameCount
-        );
+        SharksAndTigers game = new SharksAndTigers(msg.sender, position, playerOneMark, gameCount);
 
         // persist game address for lookups without relying on events
         games[gameCount] = address(game);
 
-        emit GameCreated(
-            gameCount,
-            address(game),
-            msg.sender,
-            playerOneMark,
-            position
-        );
+        emit GameCreated(gameCount, address(game), msg.sender, playerOneMark, position);
     }
 
     function getGameAddress(uint256 gameId) external view returns (address) {

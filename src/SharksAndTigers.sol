@@ -67,12 +67,7 @@ contract SharksAndTigers {
         Mark[9] gameBoard;
     }
 
-    constructor(
-        address _playerOne,
-        uint256 position,
-        Mark mark,
-        uint256 _gameId
-    ) {
+    constructor(address _playerOne, uint256 position, Mark mark, uint256 _gameId) {
         gameId = _gameId;
         playerOne = _playerOne;
         gameState = GameState.Open;
@@ -85,20 +80,14 @@ contract SharksAndTigers {
 
     modifier validatePlayerMove(uint256 position) {
         require(position < 9, "Position is out of range");
-        require(
-            gameBoard[position] == Mark.Empty,
-            "Position is already marked"
-        );
+        require(gameBoard[position] == Mark.Empty, "Position is already marked");
         _;
     }
 
     function joinGame(uint256 position) external validatePlayerMove(position) {
         require(gameState == GameState.Open, "Game is not open to joining");
         require(playerTwo == address(0), "Player two already joined");
-        require(
-            msg.sender != playerOne,
-            "Player one cannot join as player two"
-        );
+        require(msg.sender != playerOne, "Player one cannot join as player two");
 
         gameState = GameState.Active;
         playerTwo = msg.sender;
@@ -106,13 +95,7 @@ contract SharksAndTigers {
         currentPlayer = playerOne;
         lastPlayTime = block.timestamp;
 
-        emit PlayerTwoJoined(
-            gameId,
-            address(this),
-            playerTwo,
-            playerTwoMark,
-            position
-        );
+        emit PlayerTwoJoined(gameId, address(this), playerTwo, playerTwoMark, position);
     }
 
     function makeMove(uint256 position) external validatePlayerMove(position) {
@@ -137,40 +120,17 @@ contract SharksAndTigers {
             gameState = GameState.Ended;
             winner = msg.sender;
             emit GameEnded(
-                gameId,
-                address(this),
-                playerOne,
-                playerTwo,
-                playerOneMark,
-                playerTwoMark,
-                lastPlayTime,
-                winner,
-                isDraw
+                gameId, address(this), playerOne, playerTwo, playerOneMark, playerTwoMark, lastPlayTime, winner, isDraw
             );
         } else if (isBoardFull()) {
             // game is a draw
             gameState = GameState.Ended;
             isDraw = true;
             emit GameEnded(
-                gameId,
-                address(this),
-                playerOne,
-                playerTwo,
-                playerOneMark,
-                playerTwoMark,
-                lastPlayTime,
-                winner,
-                isDraw
+                gameId, address(this), playerOne, playerTwo, playerOneMark, playerTwoMark, lastPlayTime, winner, isDraw
             );
         } else {
-            emit MoveMade(
-                gameId,
-                address(this),
-                msg.sender,
-                playMark,
-                position,
-                lastPlayTime
-            );
+            emit MoveMade(gameId, address(this), msg.sender, playMark, position, lastPlayTime);
         }
     }
 
@@ -179,69 +139,49 @@ contract SharksAndTigers {
         Mark playerMark = gameBoard[position];
         uint256 row = (position / 3) * 3; // determines the row of the move
 
-        /***************
-         ** Check rows **
-         ***************/
-
-        if (
-            gameBoard[row] == playerMark &&
-            gameBoard[row + 1] == playerMark &&
-            gameBoard[row + 2] == playerMark
-        ) {
+        /**
+         *
+         * Check rows **
+         *
+         */
+        if (gameBoard[row] == playerMark && gameBoard[row + 1] == playerMark && gameBoard[row + 2] == playerMark) {
             return true;
         }
 
-        /******************
-         ** Check columns **
-         ******************/
+        /**
+         *
+         * Check columns **
+         *
+         */
 
         // left column
-        if (
-            gameBoard[0] == playerMark &&
-            gameBoard[3] == playerMark &&
-            gameBoard[6] == playerMark
-        ) {
+        if (gameBoard[0] == playerMark && gameBoard[3] == playerMark && gameBoard[6] == playerMark) {
             return true;
         }
 
         // center column
-        if (
-            gameBoard[1] == playerMark &&
-            gameBoard[4] == playerMark &&
-            gameBoard[7] == playerMark
-        ) {
+        if (gameBoard[1] == playerMark && gameBoard[4] == playerMark && gameBoard[7] == playerMark) {
             return true;
         }
 
         // right column
-        if (
-            gameBoard[2] == playerMark &&
-            gameBoard[5] == playerMark &&
-            gameBoard[8] == playerMark
-        ) {
+        if (gameBoard[2] == playerMark && gameBoard[5] == playerMark && gameBoard[8] == playerMark) {
             return true;
         }
 
-        /********************
-         ** Check diagonals **
-         ********************/
-
+        /**
+         *
+         * Check diagonals **
+         *
+         */
         if (position % 2 == 0) {
             // Check first diagonal
-            if (
-                gameBoard[0] == playerMark &&
-                gameBoard[4] == playerMark &&
-                gameBoard[8] == playerMark
-            ) {
+            if (gameBoard[0] == playerMark && gameBoard[4] == playerMark && gameBoard[8] == playerMark) {
                 return true;
             }
 
             // Check second diagonal
-            if (
-                gameBoard[2] == playerMark &&
-                gameBoard[4] == playerMark &&
-                gameBoard[6] == playerMark
-            ) {
+            if (gameBoard[2] == playerMark && gameBoard[4] == playerMark && gameBoard[6] == playerMark) {
                 return true;
             }
         }
