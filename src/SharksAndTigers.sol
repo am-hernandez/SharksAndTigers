@@ -20,14 +20,14 @@ contract SharksAndTigers {
         address indexed gameContract,
         address indexed playerTwo,
         Mark playerTwoMark,
-        uint256 position
+        uint8 position
     );
     event MoveMade(
         uint256 indexed gameId,
         address indexed gameContract,
         address indexed player,
         Mark playerMark,
-        uint256 position,
+        uint8 position,
         uint256 lastPlayTime
     );
     event GameEnded(
@@ -68,7 +68,7 @@ contract SharksAndTigers {
         Mark[BOARD_SIZE] gameBoard;
     }
 
-    constructor(address _playerOne, uint256 _position, Mark _mark, uint256 _gameId) {
+    constructor(address _playerOne, uint8 _position, Mark _mark, uint256 _gameId) {
         require(_playerOne != address(0), "Player one cannot be the zero address");
 
         s_gameId = _gameId;
@@ -81,13 +81,13 @@ contract SharksAndTigers {
         s_gameBoard[_position] = s_playerOneMark;
     }
 
-    modifier validatePlayerMove(uint256 _position) {
+    modifier validatePlayerMove(uint8 _position) {
         require(_position < BOARD_SIZE, "Position is out of range");
         require(s_gameBoard[_position] == Mark.Empty, "Position is already marked");
         _;
     }
 
-    function joinGame(uint256 _position) external validatePlayerMove(_position) {
+    function joinGame(uint8 _position) external validatePlayerMove(_position) {
         require(s_gameState == GameState.Open, "Game is not open to joining");
         require(s_playerTwo == address(0), "Player two already joined");
         require(msg.sender != s_playerOne, "Player one cannot join as player two");
@@ -101,7 +101,7 @@ contract SharksAndTigers {
         emit PlayerTwoJoined(s_gameId, address(this), s_playerTwo, s_playerTwoMark, _position);
     }
 
-    function makeMove(uint256 _position) external validatePlayerMove(_position) {
+    function makeMove(uint8 _position) external validatePlayerMove(_position) {
         require(s_gameState == GameState.Active, "Game is not active");
         require(s_currentPlayer == msg.sender, "You are not the current player");
 
@@ -153,18 +153,22 @@ contract SharksAndTigers {
         }
     }
 
-    function isWinningMove(uint256 _position) private view returns (bool) {
+    function isWinningMove(uint8 _position) private view returns (bool) {
         // validate if this move is the winning move
         Mark playerMark = s_gameBoard[_position];
-        uint256 row = (_position / 3) * 3; // determines the row of the move
+        uint8 numOfColsAndRows = 3;
 
         /**
          *
          * Check rows **
          *
          */
-        if (s_gameBoard[row] == playerMark && s_gameBoard[row + 1] == playerMark && s_gameBoard[row + 2] == playerMark)
-        {
+        uint8 rowStartIndex = uint8(_position - (_position % numOfColsAndRows)); // 0,3,6
+
+        if (
+            s_gameBoard[rowStartIndex] == playerMark && s_gameBoard[rowStartIndex + 1] == playerMark
+                && s_gameBoard[rowStartIndex + 2] == playerMark
+        ) {
             return true;
         }
 
@@ -173,19 +177,12 @@ contract SharksAndTigers {
          * Check columns **
          *
          */
+        uint8 colStartIndex = uint8(_position % numOfColsAndRows); // 0,1,2
 
-        // left column
-        if (s_gameBoard[0] == playerMark && s_gameBoard[3] == playerMark && s_gameBoard[6] == playerMark) {
-            return true;
-        }
-
-        // center column
-        if (s_gameBoard[1] == playerMark && s_gameBoard[4] == playerMark && s_gameBoard[7] == playerMark) {
-            return true;
-        }
-
-        // right column
-        if (s_gameBoard[2] == playerMark && s_gameBoard[5] == playerMark && s_gameBoard[8] == playerMark) {
+        if (
+            s_gameBoard[colStartIndex] == playerMark && s_gameBoard[colStartIndex + numOfColsAndRows] == playerMark
+                && s_gameBoard[colStartIndex + 2 * numOfColsAndRows] == playerMark
+        ) {
             return true;
         }
 

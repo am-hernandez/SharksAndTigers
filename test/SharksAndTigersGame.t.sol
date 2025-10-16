@@ -102,7 +102,7 @@ contract SharksAndTigersGameTest is Test {
         assertEq(game1.s_currentPlayer(), game1.s_playerOne());
     }
 
-    function _joinGame1Helper(address player, uint256 pos) internal {
+    function _joinGame1Helper(address player, uint8 pos) internal {
         vm.prank(player);
         game1.joinGame(pos);
     }

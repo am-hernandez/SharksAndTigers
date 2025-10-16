@@ -6,7 +6,7 @@ import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
 import {SharksAndTigers} from "src/SharksAndTigers.sol";
 
 contract MaliciousJoiner {
-    function attemptJoinThenImmediateMove(SharksAndTigers game, uint256 joinPos, uint256 movePos)
+    function attemptJoinThenImmediateMove(SharksAndTigers game, uint8 joinPos, uint8 movePos)
         external
         returns (bool moveFailed)
     {

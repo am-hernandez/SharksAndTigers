@@ -15,7 +15,7 @@ contract SharksAndTigersFactory {
         uint256 position
     );
 
-    function createGame(uint256 position, uint256 _playerOneMark) external {
+    function createGame(uint8 position, uint256 _playerOneMark) external {
         require(_playerOneMark == 1 || _playerOneMark == 2, "Invalid mark for board");
         require(position < 9, "Position is out of range");
 
