@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
 import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
@@ -35,31 +35,31 @@ contract SharksAndTigersGameTest is Test {
     }
 
     function test_initialContractState() public view {
-        assertEq(game1.isDraw(), false);
-        assertEq(game1.playerTwo(), address(0));
+        assertEq(game1.s_isDraw(), false);
+        assertEq(game1.s_playerTwo(), address(0));
 
         // currentPlayer is 0 address because playerTwo has not joined yet
-        assertEq(game1.currentPlayer(), address(0));
-        assertEq(game1.winner(), address(0));
-        assertEq(uint256(game1.gameState()), uint256(SharksAndTigers.GameState.Open));
+        assertEq(game1.s_currentPlayer(), address(0));
+        assertEq(game1.s_winner(), address(0));
+        assertEq(uint256(game1.s_gameState()), uint256(SharksAndTigers.GameState.Open));
 
         // playerOneMark is Shark because playerOne created game1 with mark Shark
-        assertEq(uint256(game1.playerOneMark()), uint256(SharksAndTigers.Mark.Shark));
+        assertEq(uint256(game1.s_playerOneMark()), uint256(SharksAndTigers.Mark.Shark));
 
         // playerTwoMark is Tiger because playerOne created game1 with mark Shark
-        assertEq(uint256(game1.playerTwoMark()), uint256(SharksAndTigers.Mark.Tiger));
+        assertEq(uint256(game1.s_playerTwoMark()), uint256(SharksAndTigers.Mark.Tiger));
 
         // gameBoard[0] is Shark because playerOne created game1 with mark Shark at pos 0
-        assertEq(uint256(game1.gameBoard(0)), uint256(SharksAndTigers.Mark.Shark));
+        assertEq(uint256(game1.s_gameBoard(0)), uint256(SharksAndTigers.Mark.Shark));
 
         // playerOneMark is Tiger because playerOne created game2 with mark Tiger
-        assertEq(uint256(game2.playerOneMark()), uint256(SharksAndTigers.Mark.Tiger));
+        assertEq(uint256(game2.s_playerOneMark()), uint256(SharksAndTigers.Mark.Tiger));
 
         // playerTwoMark is Shark because playerOne created game2 with mark Tiger
-        assertEq(uint256(game2.playerTwoMark()), uint256(SharksAndTigers.Mark.Shark));
+        assertEq(uint256(game2.s_playerTwoMark()), uint256(SharksAndTigers.Mark.Shark));
 
         // gameBoard[5] is Tiger because playerOne created game2 with mark Tiger at pos 5
-        assertEq(uint256(game2.gameBoard(5)), uint256(SharksAndTigers.Mark.Tiger));
+        assertEq(uint256(game2.s_gameBoard(5)), uint256(SharksAndTigers.Mark.Tiger));
     }
 
     function test_joinGame_revertsWhenNotOpen() public {
@@ -92,14 +92,14 @@ contract SharksAndTigersGameTest is Test {
         emit SharksAndTigers.PlayerTwoJoined(1, address(game1), walletThree, SharksAndTigers.Mark.Tiger, 6);
         game1.joinGame(6);
 
-        assertEq(uint256(game1.gameState()), uint256(SharksAndTigers.GameState.Active));
+        assertEq(uint256(game1.s_gameState()), uint256(SharksAndTigers.GameState.Active));
 
         // playerTwo is walletThree because walletThree joined game1
-        assertEq(game1.playerTwo(), walletThree);
-        assertEq(uint256(game1.gameBoard(6)), uint256(SharksAndTigers.Mark.Tiger));
+        assertEq(game1.s_playerTwo(), walletThree);
+        assertEq(uint256(game1.s_gameBoard(6)), uint256(SharksAndTigers.Mark.Tiger));
 
         // currentPlayer is game1.playerOne() because walletThree joined and made a move on game1
-        assertEq(game1.currentPlayer(), game1.playerOne());
+        assertEq(game1.s_currentPlayer(), game1.s_playerOne());
     }
 
     function _joinGame1Helper(address player, uint256 pos) internal {
@@ -134,20 +134,18 @@ contract SharksAndTigersGameTest is Test {
     function test_makeMove_marksBoard_andSwitchesTurn_andEmits() public {
         _joinGame1Helper(walletThree, 2);
 
-        address p1 = game1.playerOne();
+        address p1 = game1.s_playerOne();
         vm.prank(p1);
         vm.expectEmit(true, true, true, false, address(game1));
         emit SharksAndTigers.MoveMade(1, address(game1), p1, SharksAndTigers.Mark.Shark, 3, block.timestamp);
         game1.makeMove(3);
-        assertEq(uint256(game1.gameBoard(3)), uint256(SharksAndTigers.Mark.Shark));
-        assertEq(game1.currentPlayer(), game1.playerTwo());
+        assertEq(uint256(game1.s_gameBoard(3)), uint256(SharksAndTigers.Mark.Shark));
+        assertEq(game1.s_currentPlayer(), game1.s_playerTwo());
     }
 
     /**
      *
-     */
-    /* Should recognize all 8 winning scenarios */
-    /**
+     * Should recognize all 8 winning scenarios **
      *
      */
     function test_winScenario_leftColumn_setsWinner_andEndsGame_andEmits() public {
@@ -163,8 +161,8 @@ contract SharksAndTigersGameTest is Test {
         vm.prank(walletTwo);
         game1.makeMove(5);
 
-        address pOne = game1.playerOne();
-        address pTwo = game1.playerTwo();
+        address pOne = game1.s_playerOne();
+        address pTwo = game1.s_playerTwo();
         vm.prank(walletOne);
         vm.expectEmit(true, true, false, false, address(game1));
         emit SharksAndTigers.GameEnded(
@@ -180,8 +178,8 @@ contract SharksAndTigersGameTest is Test {
         );
         game1.makeMove(6);
 
-        assertEq(game1.winner(), walletOne);
-        assertEq(uint256(game1.gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game1.s_winner(), walletOne);
+        assertEq(uint256(game1.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
     }
 
     function test_winScenario_centerColumn_setsWinner_andEndsGame_andEmits() public {
@@ -194,7 +192,7 @@ contract SharksAndTigersGameTest is Test {
         // Create a fresh game: start at pos 1 with Shark
         vm.prank(walletOne);
         factory.createGame(1, 1);
-        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.gameCount())));
+        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.s_gameCount())));
 
         // playerTwo joins at a safe position
         vm.prank(walletTwo);
@@ -206,9 +204,9 @@ contract SharksAndTigersGameTest is Test {
         vm.prank(walletTwo);
         game.makeMove(5);
 
-        address pOne = game.playerOne();
-        address pTwo = game.playerTwo();
-        uint256 gid = game.gameId();
+        address pOne = game.s_playerOne();
+        address pTwo = game.s_playerTwo();
+        uint256 gid = game.s_gameId();
         vm.prank(walletOne);
         vm.expectEmit(true, true, false, false, address(game));
         emit SharksAndTigers.GameEnded(
@@ -224,8 +222,8 @@ contract SharksAndTigersGameTest is Test {
         );
         game.makeMove(7);
 
-        assertEq(game.winner(), walletOne);
-        assertEq(uint256(game.gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game.s_winner(), walletOne);
+        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
     }
 
     function test_winScenario_rightColumn_setsWinner_andEndsGame_andEmits() public {
@@ -237,7 +235,7 @@ contract SharksAndTigersGameTest is Test {
         // Create a fresh game: start at pos 2 with Shark
         vm.prank(walletOne);
         factory.createGame(2, 1);
-        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.gameCount())));
+        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.s_gameCount())));
 
         // playerTwo joins
         vm.prank(walletTwo);
@@ -249,9 +247,9 @@ contract SharksAndTigersGameTest is Test {
         vm.prank(walletTwo);
         game.makeMove(3);
 
-        address pOne = game.playerOne();
-        address pTwo = game.playerTwo();
-        uint256 gid = game.gameId();
+        address pOne = game.s_playerOne();
+        address pTwo = game.s_playerTwo();
+        uint256 gid = game.s_gameId();
         vm.prank(walletOne);
         vm.expectEmit(true, true, false, false, address(game));
         emit SharksAndTigers.GameEnded(
@@ -267,15 +265,21 @@ contract SharksAndTigersGameTest is Test {
         );
         game.makeMove(8);
 
-        assertEq(game.winner(), walletOne);
-        assertEq(uint256(game.gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game.s_winner(), walletOne);
+        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
     }
 
     function test_winScenario_topRow_setsWinner_andEndsGame_andEmits() public {
+        /* Scenario #4
+          | 🦈 | 🦈 | 🦈 |
+          | -- | -- | -- |
+          | 🐅 | 🐅 | -- |
+        */
+
         // Create a fresh game: start at pos 0 with Shark
         vm.prank(walletOne);
         factory.createGame(0, 1);
-        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.gameCount())));
+        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.s_gameCount())));
 
         vm.prank(walletTwo);
         game.joinGame(6);
@@ -285,9 +289,9 @@ contract SharksAndTigersGameTest is Test {
         vm.prank(walletTwo);
         game.makeMove(7);
 
-        address pOne = game.playerOne();
-        address pTwo = game.playerTwo();
-        uint256 gid = game.gameId();
+        address pOne = game.s_playerOne();
+        address pTwo = game.s_playerTwo();
+        uint256 gid = game.s_gameId();
         vm.prank(walletOne);
         vm.expectEmit(true, true, false, false, address(game));
         emit SharksAndTigers.GameEnded(
@@ -303,15 +307,21 @@ contract SharksAndTigersGameTest is Test {
         );
         game.makeMove(2);
 
-        assertEq(game.winner(), walletOne);
-        assertEq(uint256(game.gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game.s_winner(), walletOne);
+        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
     }
 
     function test_winScenario_centerRow_setsWinner_andEndsGame_andEmits() public {
+        /* Scenario #5
+          | -- | -- | -- |
+          | 🦈 | 🦈 | 🦈 |
+          | 🐅 | 🐅 | -- |
+        */
+
         // Create a fresh game: start at pos 3 with Shark
         vm.prank(walletOne);
         factory.createGame(3, 1);
-        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.gameCount())));
+        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.s_gameCount())));
 
         vm.prank(walletTwo);
         game.joinGame(6);
@@ -321,9 +331,9 @@ contract SharksAndTigersGameTest is Test {
         vm.prank(walletTwo);
         game.makeMove(7);
 
-        address pOne = game.playerOne();
-        address pTwo = game.playerTwo();
-        uint256 gid = game.gameId();
+        address pOne = game.s_playerOne();
+        address pTwo = game.s_playerTwo();
+        uint256 gid = game.s_gameId();
         vm.prank(walletOne);
         vm.expectEmit(true, true, false, false, address(game));
         emit SharksAndTigers.GameEnded(
@@ -339,15 +349,21 @@ contract SharksAndTigersGameTest is Test {
         );
         game.makeMove(5);
 
-        assertEq(game.winner(), walletOne);
-        assertEq(uint256(game.gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game.s_winner(), walletOne);
+        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
     }
 
     function test_winScenario_bottomRow_setsWinner_andEndsGame_andEmits() public {
+        /* Scenario #6
+          | 🐅 | 🐅 | -- |
+          | -- | -- | -- |
+          | 🦈 | 🦈 | 🦈 |
+        */
+
         // Create a fresh game: start at pos 6 with Shark
         vm.prank(walletOne);
         factory.createGame(6, 1);
-        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.gameCount())));
+        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.s_gameCount())));
 
         vm.prank(walletTwo);
         game.joinGame(0);
@@ -357,9 +373,9 @@ contract SharksAndTigersGameTest is Test {
         vm.prank(walletTwo);
         game.makeMove(1);
 
-        address pOne = game.playerOne();
-        address pTwo = game.playerTwo();
-        uint256 gid = game.gameId();
+        address pOne = game.s_playerOne();
+        address pTwo = game.s_playerTwo();
+        uint256 gid = game.s_gameId();
         vm.prank(walletOne);
         vm.expectEmit(true, true, false, false, address(game));
         emit SharksAndTigers.GameEnded(
@@ -375,15 +391,21 @@ contract SharksAndTigersGameTest is Test {
         );
         game.makeMove(8);
 
-        assertEq(game.winner(), walletOne);
-        assertEq(uint256(game.gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game.s_winner(), walletOne);
+        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
     }
 
-    function test_winScenario_leftDiagonal_setsWinner_andEndsGame_andEmits() public {
-        // Left diagonal: 0,4,8 for playerOne
+    function test_winScenario_mainDiagonal_setsWinner_andEndsGame_andEmits() public {
+        /* Scenario #7
+          | 🦈 | 🐅 | 🐅 |
+          | -- | 🦈 | -- |
+          | -- | -- | 🦈 |
+        */
+
+        // Main diagonal: 0,4,8 for playerOne
         vm.prank(walletOne);
         factory.createGame(0, 1);
-        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.gameCount())));
+        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.s_gameCount())));
 
         vm.prank(walletTwo);
         game.joinGame(1);
@@ -393,9 +415,9 @@ contract SharksAndTigersGameTest is Test {
         vm.prank(walletTwo);
         game.makeMove(2);
 
-        address pOne = game.playerOne();
-        address pTwo = game.playerTwo();
-        uint256 gid = game.gameId();
+        address pOne = game.s_playerOne();
+        address pTwo = game.s_playerTwo();
+        uint256 gid = game.s_gameId();
         vm.prank(walletOne);
         vm.expectEmit(true, true, false, false, address(game));
         emit SharksAndTigers.GameEnded(
@@ -411,15 +433,21 @@ contract SharksAndTigersGameTest is Test {
         );
         game.makeMove(8);
 
-        assertEq(game.winner(), walletOne);
-        assertEq(uint256(game.gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game.s_winner(), walletOne);
+        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
     }
 
-    function test_winScenario_rightDiagonal_setsWinner_andEndsGame_andEmits() public {
-        // Right diagonal: 2,4,6 for playerOne
+    function test_winScenario_antiDiagonal_setsWinner_andEndsGame_andEmits() public {
+        /* Scenario #8
+          | 🐅 | 🐅 | 🦈 |
+          | -- | 🦈 | -- |
+          | 🦈 | -- | -- |
+        */
+
+        // Anti-diagonal: 2,4,6 for playerOne
         vm.prank(walletOne);
         factory.createGame(2, 1);
-        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.gameCount())));
+        SharksAndTigers game = SharksAndTigers(payable(factory.getGameAddress(factory.s_gameCount())));
 
         vm.prank(walletTwo);
         game.joinGame(1);
@@ -429,9 +457,9 @@ contract SharksAndTigersGameTest is Test {
         vm.prank(walletTwo);
         game.makeMove(0);
 
-        address pOne = game.playerOne();
-        address pTwo = game.playerTwo();
-        uint256 gid = game.gameId();
+        address pOne = game.s_playerOne();
+        address pTwo = game.s_playerTwo();
+        uint256 gid = game.s_gameId();
         vm.prank(walletOne);
         vm.expectEmit(true, true, false, false, address(game));
         emit SharksAndTigers.GameEnded(
@@ -447,11 +475,17 @@ contract SharksAndTigersGameTest is Test {
         );
         game.makeMove(6);
 
-        assertEq(game.winner(), walletOne);
-        assertEq(uint256(game.gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game.s_winner(), walletOne);
+        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
     }
 
     function test_draw_setsEnded_andEmits() public {
+        /* Will complete the board as below:
+          | 🦈 | 🐅 | 🐅 |
+          | 🐅 | 🦈 | 🦈 |
+          | 🦈 | 🦈 | 🐅 |
+        */
+
         _joinGame1Helper(walletThree, 1);
 
         vm.prank(walletOne);
@@ -467,8 +501,8 @@ contract SharksAndTigersGameTest is Test {
         vm.prank(walletThree);
         game1.makeMove(2);
 
-        address plOne = game1.playerOne();
-        address plTwo = game1.playerTwo();
+        address plOne = game1.s_playerOne();
+        address plTwo = game1.s_playerTwo();
         vm.prank(walletOne);
         vm.expectEmit(true, true, false, false, address(game1));
         emit SharksAndTigers.GameEnded(
@@ -484,9 +518,9 @@ contract SharksAndTigersGameTest is Test {
         );
         game1.makeMove(6);
 
-        assertEq(uint256(game1.gameState()), uint256(SharksAndTigers.GameState.Ended));
-        assertEq(game1.isDraw(), true);
-        assertEq(game1.winner(), address(0));
+        assertEq(uint256(game1.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game1.s_isDraw(), true);
+        assertEq(game1.s_winner(), address(0));
     }
 
     function test_getGameInfo_returnsAccurateData() public {
@@ -498,17 +532,17 @@ contract SharksAndTigersGameTest is Test {
 
         SharksAndTigers.Game memory info = game1.getGameInfo();
         assertEq(info.gameId, 1);
-        assertEq(info.lastPlayTime, game1.lastPlayTime());
-        assertEq(info.playerOne, game1.playerOne());
-        assertEq(info.playerTwo, game1.playerTwo());
-        assertEq(info.currentPlayer, game1.currentPlayer());
-        assertEq(info.winner, game1.winner());
+        assertEq(info.lastPlayTime, game1.s_lastPlayTime());
+        assertEq(info.playerOne, game1.s_playerOne());
+        assertEq(info.playerTwo, game1.s_playerTwo());
+        assertEq(info.currentPlayer, game1.s_currentPlayer());
+        assertEq(info.winner, game1.s_winner());
         assertEq(info.isDraw, false);
         assertEq(uint256(info.gameState), uint256(SharksAndTigers.GameState.Active));
-        assertEq(uint256(info.playerOneMark), uint256(game1.playerOneMark()));
-        assertEq(uint256(info.playerTwoMark), uint256(game1.playerTwoMark()));
+        assertEq(uint256(info.playerOneMark), uint256(game1.s_playerOneMark()));
+        assertEq(uint256(info.playerTwoMark), uint256(game1.s_playerTwoMark()));
         for (uint256 i; i < 9; i++) {
-            assertEq(uint256(info.gameBoard[i]), uint256(game1.gameBoard(i)));
+            assertEq(uint256(info.gameBoard[i]), uint256(game1.s_gameBoard(i)));
         }
     }
 }

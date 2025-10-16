@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
 import {SharksAndTigers} from "src/SharksAndTigers.sol";
@@ -18,12 +18,12 @@ contract SharksAndTigersFactoryTest is Test {
         vm.deal(walletTwo, 100 ether);
     }
 
-    function test_deploysSuccessfully() public {
+    function test_deploysSuccessfully() public view {
         assertTrue(address(factory) != address(0));
     }
 
-    function test_initialGameCountIsZero() public {
-        uint256 count = factory.gameCount();
+    function test_initialGameCountIsZero() public view {
+        uint256 count = factory.s_gameCount();
         assertEq(count, 0);
         assertEq(factory.getGameCount(), 0);
     }
@@ -50,14 +50,14 @@ contract SharksAndTigersFactoryTest is Test {
         vm.prank(walletOne);
         factory.createGame(0, 1);
 
-        assertEq(factory.gameCount(), 1);
+        assertEq(factory.s_gameCount(), 1);
 
         address gameAddr = factory.getGameAddress(1);
         assertTrue(gameAddr != address(0));
 
         // Assert game is Open for joining
         SharksAndTigers game = SharksAndTigers(gameAddr);
-        assertEq(uint256(game.gameState()), uint256(SharksAndTigers.GameState.Open));
+        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Open));
     }
 
     function test_createGame_emitsEvent_andMappingSet() public {
