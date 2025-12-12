@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
 import {SharksAndTigers} from "src/SharksAndTigers.sol";
 
