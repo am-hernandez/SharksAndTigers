@@ -2,13 +2,13 @@
 pragma solidity ^0.8.26;
 
 import {SharksAndTigers} from "./SharksAndTigers.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/token/ERC20/IERC20.sol";
+import "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 
 contract SharksAndTigersFactory {
     using SafeERC20 for IERC20;
 
-    address public immutable s_usdcToken;
+    address public immutable i_usdcToken;
     uint256 public s_gameCount = 0;
     mapping(uint256 => address) public s_games;
 
@@ -24,7 +24,7 @@ contract SharksAndTigersFactory {
 
     constructor(address _usdcToken) {
         require(_usdcToken != address(0), "USDC token address cannot be zero");
-        s_usdcToken = _usdcToken;
+        i_usdcToken = _usdcToken;
     }
 
     /**
@@ -44,12 +44,10 @@ contract SharksAndTigersFactory {
         SharksAndTigers.Mark playerOneMark = SharksAndTigers.Mark(_playerOneMark);
 
         // Check that user has approved sufficient USDC for the wager
-        // User must call: IERC20(s_usdcToken).approve(address(this), wager) first
-        IERC20 usdc = IERC20(s_usdcToken);
-        uint256 allowance = usdc.allowance(msg.sender, address(this));
-        require(
-            allowance >= wager, "Insufficient USDC allowance. Please approve the factory to spend your wager amount."
-        );
+        // User must call: IERC20(i_usdcToken).approve(address(this), wager) first
+        IERC20 usdc = IERC20(i_usdcToken);
+        (bool hasAllowance,) = _checkAllowance(msg.sender, wager);
+        require(hasAllowance, "Insufficient USDC allowance. Please approve the factory to spend your wager amount.");
 
         // Transfer USDC from player one to this contract first
         usdc.safeTransferFrom(msg.sender, address(this), wager);
@@ -58,7 +56,7 @@ contract SharksAndTigersFactory {
 
         // Deploy game contract
         SharksAndTigers game =
-            new SharksAndTigers(msg.sender, position, playerOneMark, playClock, s_gameCount, s_usdcToken, wager);
+            new SharksAndTigers(msg.sender, position, playerOneMark, playClock, s_gameCount, i_usdcToken, wager);
 
         // Transfer USDC from factory to game contract
         usdc.safeTransfer(address(game), wager);
@@ -89,9 +87,7 @@ contract SharksAndTigersFactory {
         view
         returns (bool hasAllowance, uint256 currentAllowance)
     {
-        IERC20 usdc = IERC20(s_usdcToken);
-        currentAllowance = usdc.allowance(user, address(this));
-        hasAllowance = currentAllowance >= wagerAmount;
+        return _checkAllowance(user, wagerAmount);
     }
 
     /**
@@ -99,6 +95,18 @@ contract SharksAndTigersFactory {
      * @return The USDC token contract address
      */
     function getUsdcToken() external view returns (address) {
-        return s_usdcToken;
+        return i_usdcToken;
+    }
+
+    // Internal functions
+
+    function _checkAllowance(address user, uint256 wagerAmount)
+        internal
+        view
+        returns (bool hasAllowance, uint256 currentAllowance)
+    {
+        IERC20 usdc = IERC20(i_usdcToken);
+        currentAllowance = usdc.allowance(user, address(this));
+        hasAllowance = currentAllowance >= wagerAmount;
     }
 }
