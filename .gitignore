@@ -39,3 +39,9 @@ cache-hh/
 # --- solidity-coverage ---
 /coverage
 /coverage.json
+
+# --- Documentation ---
+docs/
+
+# --- Cursor ---
+.cursorrules
