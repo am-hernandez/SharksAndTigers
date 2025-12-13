@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
+import {console} from "forge-std/console.sol";
 import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
 import {SharksAndTigers} from "src/SharksAndTigers.sol";
 import "@openzeppelin/mocks/token/ERC20Mock.sol";
@@ -159,4 +160,268 @@ contract SharksAndTigersSecurityTest is Test {
         game.joinGame(1);
         vm.stopPrank();
     }
+
+    function test_withdrawWager_revertsWhenGameIsOpenButNotCreator() public {
+        // Game is open, but walletTwo did not create it
+        vm.prank(walletTwo);
+        vm.expectRevert(bytes("You are not a player in this game"));
+        game.withdrawWager();
+    }
+
+    function test_withdrawWager_revertsWhenGameIsActiveAndPlayerTwo() public {
+        // Join game as player two
+        vm.startPrank(walletTwo);
+        usdc.approve(address(game), WAGER);
+        game.joinGame(1);
+        vm.stopPrank();
+
+        // Game is now active, player two tries to withdraw
+        vm.prank(walletTwo);
+        vm.expectRevert(bytes("Cannot withdraw wager while game is active"));
+        game.withdrawWager();
+    }
+
+    function test_withdrawWager_revertsWhenGameIsActiveAndNotAPlayer() public {
+        // Join game as player two
+        vm.startPrank(walletTwo);
+        usdc.approve(address(game), WAGER);
+        game.joinGame(1);
+        vm.stopPrank();
+
+        // Game is now active, walletThree (not a player) tries to withdraw
+        vm.prank(walletThree);
+        vm.expectRevert(bytes("You are not a player in this game"));
+        game.withdrawWager();
+    }
+
+    function test_withdrawWager_revertsWhenGameIsDrawButNotAPlayer() public {
+        // Join game and play to a draw
+        vm.startPrank(walletTwo);
+        usdc.approve(address(game), WAGER);
+        game.joinGame(1);
+        vm.stopPrank();
+
+        // Play to a draw
+        vm.prank(walletOne);
+        game.makeMove(4);
+        vm.prank(walletTwo);
+        game.makeMove(8);
+        vm.prank(walletOne);
+        game.makeMove(5);
+        vm.prank(walletTwo);
+        game.makeMove(3);
+        vm.prank(walletOne);
+        game.makeMove(7);
+        vm.prank(walletTwo);
+        game.makeMove(2);
+        vm.prank(walletOne);
+        game.makeMove(6); // Draw
+
+        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game.s_isDraw(), true);
+
+        // walletThree (not a player) tries to withdraw
+        vm.prank(walletThree);
+        vm.expectRevert(bytes("You are not a player in this game"));
+        game.withdrawWager();
+    }
+
+    // Play clock vulnerability tests
+
+    function test_makeMove_revertsWhenPlayClockExpired() public {
+        // Join game
+        vm.startPrank(walletTwo);
+        usdc.approve(address(game), WAGER);
+        game.joinGame(1);
+        vm.stopPrank();
+
+        // Fast forward past play clock
+        vm.warp(block.timestamp + PLAY_CLOCK + 1);
+
+        // Player one tries to make move after clock expired
+        vm.prank(walletOne);
+        vm.expectRevert(bytes("You ran out of time to make a move"));
+        game.makeMove(3);
+    }
+
+    function test_makeMove_allowsMoveExactlyAtPlayClock() public {
+        // Join game
+        vm.startPrank(walletTwo);
+        usdc.approve(address(game), WAGER);
+        game.joinGame(1);
+        vm.stopPrank();
+
+        // Fast forward to exactly play clock (should still be valid)
+        vm.warp(block.timestamp + PLAY_CLOCK);
+
+        // Player one should be able to make move
+        vm.prank(walletOne);
+        game.makeMove(3);
+
+        // Verify move was made
+        assertEq(uint256(game.s_gameBoard(3)), uint256(SharksAndTigers.Mark.Shark));
+    }
+
+    function test_claimReward_revertsWhenCurrentPlayerTriesToClaimAfterExpiration() public {
+        // Join game
+        vm.startPrank(walletTwo);
+        usdc.approve(address(game), WAGER);
+        game.joinGame(1);
+        vm.stopPrank();
+
+        // Fast forward past play clock
+        vm.warp(block.timestamp + PLAY_CLOCK + 1);
+
+        // Current player (player one) tries to claim - should revert
+        vm.prank(walletOne);
+        vm.expectRevert(bytes("Only the winner can claim the reward"));
+        game.claimReward();
+    }
+
+    function test_claimReward_allowsNonCurrentPlayerToClaimAfterExpiration() public {
+        // Join game
+        vm.startPrank(walletTwo);
+        usdc.approve(address(game), WAGER);
+        game.joinGame(1);
+        vm.stopPrank();
+
+        // Fast forward past play clock
+        vm.warp(block.timestamp + PLAY_CLOCK + 1);
+
+        // Non-current player is player two and should be able to claim the reward
+        uint256 balanceBefore = usdc.balanceOf(walletTwo);
+        vm.prank(walletTwo);
+        game.claimReward();
+
+        // Verify reward was claimed
+        assertEq(usdc.balanceOf(walletTwo), balanceBefore + WAGER * 2);
+        assertEq(game.s_isRewardClaimed(), true);
+        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game.s_winner(), walletTwo);
+    }
+
+    function test_claimReward_revertsWhenGameEndedNormallyButTimeAlsoExpired() public {
+        // This tests that if game ends normally but time also expired,
+        // non-winner cannot claim using expiration logic
+
+        // Join game
+        vm.startPrank(walletTwo);
+        usdc.approve(address(game), WAGER);
+        game.joinGame(1);
+        vm.stopPrank();
+
+        // Play game to completion (player one wins)
+        vm.prank(walletOne);
+        game.makeMove(3);
+        vm.prank(walletTwo);
+        game.makeMove(5);
+        vm.prank(walletOne);
+        game.makeMove(6); // Player one wins
+
+        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
+        assertEq(game.s_winner(), walletOne);
+
+        // Fast forward past play clock from last move
+        vm.warp(block.timestamp + PLAY_CLOCK + 1);
+
+        // Now player two (non-winner) tries to claim using expiration logic
+        // This should revert because game already ended normally
+        vm.prank(walletTwo);
+        vm.expectRevert(bytes("Only the winner can claim the reward"));
+        game.claimReward();
+
+        // Only the actual winner should be able to claim
+        uint256 balanceBefore = usdc.balanceOf(walletOne);
+        vm.prank(walletOne);
+        game.claimReward();
+        assertEq(usdc.balanceOf(walletOne), balanceBefore + WAGER * 2);
+    }
+
+    function test_claimReward_revertsWhenNonPlayerTriesToClaimAfterExpiration() public {
+        // Join game
+        vm.startPrank(walletTwo);
+        usdc.approve(address(game), WAGER);
+        game.joinGame(1);
+        vm.stopPrank();
+
+        // Fast forward past play clock
+        vm.warp(block.timestamp + PLAY_CLOCK + 1);
+
+        // Non-player tries to claim - should revert (no balance to transfer)
+        vm.prank(walletThree);
+        // This will fail when trying to transfer balance, but let's see the exact error
+        vm.expectRevert();
+        game.claimReward();
+    }
+
+    function test_claimReward_revertsWhenRewardAlreadyClaimed() public {
+        // Join game
+        vm.startPrank(walletTwo);
+        usdc.approve(address(game), WAGER);
+        game.joinGame(1);
+        vm.stopPrank();
+
+        // Play game to completion
+        vm.prank(walletOne);
+        game.makeMove(3);
+        vm.prank(walletTwo);
+        game.makeMove(5);
+        vm.prank(walletOne);
+        game.makeMove(6); // Player one wins
+
+        // Winner claims reward
+        vm.prank(walletOne);
+        game.claimReward();
+
+        // Try to claim again - should revert
+        vm.prank(walletOne);
+        vm.expectRevert(bytes("Reward already claimed"));
+        game.claimReward();
+    }
+
+    function test_makeMove_updatesLastPlayTimeCorrectly() public {
+        // Join game
+        vm.startPrank(walletTwo);
+        usdc.approve(address(game), WAGER);
+        game.joinGame(1);
+        vm.stopPrank();
+
+        uint256 lastPlayTimeBefore = game.s_lastPlayTime();
+
+        // Make a move
+        vm.warp(block.timestamp + 100); // Advance time
+        vm.prank(walletOne);
+        game.makeMove(3);
+
+        uint256 lastPlayTimeAfter = game.s_lastPlayTime();
+
+        // Verify lastPlayTime was updated
+        assertEq(lastPlayTimeAfter, block.timestamp);
+        assertGt(lastPlayTimeAfter, lastPlayTimeBefore);
+    }
+
+    function test_playClock_edgeCase_veryLargePlayClock() public {
+        // Test with very large play clock value
+        uint256 largePlayClock = type(uint256).max / 2;
+
+        vm.startPrank(walletOne);
+        usdc.approve(address(factory), WAGER);
+        factory.createGame(0, 1, largePlayClock, WAGER);
+        vm.stopPrank();
+
+        SharksAndTigers largeClockGame = SharksAndTigers(factory.getGameAddress(factory.s_gameCount()));
+
+        // Join game
+        vm.startPrank(walletTwo);
+        usdc.approve(address(largeClockGame), WAGER);
+        largeClockGame.joinGame(1);
+        vm.stopPrank();
+
+        // Even with very large clock, should work
+        vm.prank(walletOne);
+        largeClockGame.makeMove(3);
+
+        assertEq(uint256(largeClockGame.s_gameBoard(3)), uint256(SharksAndTigers.Mark.Shark));
+    }
 }
+
