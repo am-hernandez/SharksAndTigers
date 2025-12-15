@@ -45,13 +45,13 @@ endif
 
 # Deploy (usage: make deploy ARGS=base-sepolia or make deploy ARGS=base-mainnet)
 # Uses DEPLOYER_PRIVATE_KEY from .env for testnets/mainnets, DEFAULT_ANVIL_PRIVATE_KEY for anvil
-deploy:; forge script script/Deploy.s.sol:Deploy $(BASE_NETWORK_ARGS) --private-key $(DEPLOY_PK)
+deploy:; @forge script script/Deploy.s.sol:Deploy $(BASE_NETWORK_ARGS) --private-key $(DEPLOY_PK)
 
 # Create game (usage: make create-game ARGS=base-sepolia or make create-game ARGS=base-mainnet)
 # Uses player one's private key (can be overridden in .env for testnets/mainnets)
-create-game:; forge script script/CreateGame.s.sol:CreateGame $(BASE_NETWORK_ARGS) --private-key $(PLAYER_ONE_PRIVATE_KEY)
+create-game:; @forge script script/Interactions/CreateGame.s.sol:CreateGame $(BASE_NETWORK_ARGS) --private-key $(PLAYER_ONE_PRIVATE_KEY)
 
 # Join game as player two (usage: make join-game ARGS=base-sepolia or make join-game ARGS=base-mainnet)
 # Uses player two's private key (can be overridden in .env for testnets/mainnets)
-join-game:; forge script script/JoinGame.s.sol:JoinGame $(BASE_NETWORK_ARGS) --private-key $(PLAYER_TWO_PRIVATE_KEY)
+join-game:; @forge script script/Interactions/JoinGame.s.sol:JoinGame $(BASE_NETWORK_ARGS) --private-key $(PLAYER_TWO_PRIVATE_KEY)
 
