@@ -3,9 +3,9 @@ pragma solidity ^0.8.26;
 
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/utils/ReentrancyGuardTransient.sol";
 
-contract SharksAndTigers is ReentrancyGuard {
+contract SharksAndTigers is ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     uint256 public constant BOARD_SIZE = 9;
