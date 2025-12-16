@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
+import {ERC20Mock} from "@openzeppelin/mocks/token/ERC20Mock.sol";
 import {SharksAndTigers} from "src/SharksAndTigers.sol";
 import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
-import "@openzeppelin/mocks/token/ERC20Mock.sol";
 
 contract SharksAndTigersFactoryTest is Test {
     SharksAndTigersFactory internal factory;

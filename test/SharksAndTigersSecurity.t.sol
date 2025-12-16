@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "forge-std/Test.sol";
-import {console} from "forge-std/console.sol";
-import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
+import {Test} from "forge-std/Test.sol";
+import {ERC20Mock} from "@openzeppelin/mocks/token/ERC20Mock.sol";
 import {SharksAndTigers} from "src/SharksAndTigers.sol";
-import "@openzeppelin/mocks/token/ERC20Mock.sol";
-import "@openzeppelin/token/ERC20/IERC20.sol";
+import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
 
 contract MaliciousJoiner {
     function attemptJoinThenImmediateMove(SharksAndTigers game, uint8 joinPos, uint8 movePos)

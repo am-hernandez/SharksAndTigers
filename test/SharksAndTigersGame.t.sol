@@ -2,9 +2,9 @@
 pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
+import {ERC20Mock} from "@openzeppelin/mocks/token/ERC20Mock.sol";
 import {SharksAndTigers} from "src/SharksAndTigers.sol";
-import "@openzeppelin/mocks/token/ERC20Mock.sol";
+import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
 
 contract SharksAndTigersGameTest is Test {
     SharksAndTigersFactory internal factory;
