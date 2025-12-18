@@ -50,6 +50,7 @@
     </li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#security">Security</a></li>
+    <li><a href="#design-tradeoffs--non-goals">Design Tradeoffs & Non-Goals</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
@@ -72,7 +73,7 @@ The game replaces traditional X and O marks with Shark and Tiger symbols, giving
 * **One Game = One Contract**: Each match is its own immutable contract
 * **Event-Based Updates**: Game lifecycle events are emitted for indexing and UI use
 * **Fixed Rules per Game**: Rules are set at creation and cannot change mid-game
-* **USDC Wagering**: Players wager USDC tokens with escrow until game completion
+* **USDC Staking**: Players stake USDC tokens in escrow until game completion
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -138,24 +139,24 @@ This section provides instructions on setting up the project locally. To get a l
 1. **Create Game**
    * Player One creates a game through the factory
    * Chooses a mark (Shark or Tiger) and an opening position
-   * Approves and transfers USDC wager to the factory
+   * Approves and transfers their USDC stake to the factory
    * Game enters the `Open` state
 
 2. **Join Game**
    * Player Two joins the game and makes their first move
-   * Approves and transfers matching USDC wager
+   * Approves and transfers matching USDC stake
    * Game transitions to `Active`
 
 3. **Play**
    * Players alternate turns
    * Each move is validated and recorded onchain
-   * Play clock enforces time limits for moves
+   * Play clock enforces liveness guarantees, preventing griefing where funds could otherwise be locked indefinitely
 
 4. **End Game**
    * A player wins by completing three in a row, column, or diagonal
    * The game ends in a draw when the board is full
    * Game state transitions to `Ended`
-   * Winner claims the reward (both wagers)
+   * Winner claims the reward (both escrowed stakes)
 
 ### Board Layout
 
@@ -200,7 +201,7 @@ The factory contract is responsible for creating new games and keeping a registr
 
 **Functions**
 
-##### `createGame(uint8 position, uint256 _playerOneMark, uint256 playClock, uint256 wager) external`
+##### `createGame(uint8 position, uint256 _playerOneMark, uint256 playClock, uint256 stake) external`
 
 Creates a new game instance with Player One's initial move.
 
@@ -209,7 +210,7 @@ Creates a new game instance with Player One's initial move.
 * `position`: Board position (0–8)
 * `_playerOneMark`: Mark choice (`1 = Shark`, `2 = Tiger`)
 * `playClock`: Time limit in seconds for each move
-* `wager`: USDC wager amount (must match for player two)
+* `stake`: USDC stake amount (must match for player two)
 
 **Requirements**
 
@@ -221,7 +222,7 @@ Creates a new game instance with Player One's initial move.
 **Effects**
 
 * Deploys a new `SharksAndTigers` contract
-* Transfers USDC wager from player to game contract
+* Transfers USDC stake from player to game contract
 * Increments the game counter
 * Stores the game address
 * Emits `GameCreated`
@@ -249,7 +250,7 @@ A single game contract that contains all logic and state for one match.
 **State Variables**
 
 * `i_gameId` (`uint256 immutable`): Unique game identifier
-* `i_wager` (`uint256 immutable`): USDC wager amount
+* `i_stake` (`uint256 immutable`): USDC stake amount per player
 * `i_playClock` (`uint256 immutable`): Time limit per move in seconds
 * `i_usdcToken` (`address immutable`): USDC token contract address
 * `s_lastPlayTime` (`uint256`): Timestamp of the last move
@@ -292,11 +293,11 @@ Allows the current player to make a move.
 
 ##### `claimReward() external`
 
-Allows the winner to claim the reward (both wagers) after the game ends.
+Allows the winner to claim the reward (both escrowed stakes) after the game ends.
 
-##### `withdrawWager() external`
+##### `withdrawStake() external`
 
-Allows players to withdraw their wager if the game expires due to play clock timeout.
+Allows players to withdraw their stake if the game expires due to play clock timeout.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -306,8 +307,8 @@ Allows players to withdraw their wager if the game expires due to play clock tim
 
 - [x] Factory pattern for game deployment
 - [x] Onchain game state management
-- [x] USDC wagering with escrow
-- [x] Play clock with time limits
+- [x] USDC staking with escrow
+- [x] Play clock with liveness guarantees
 - [x] Event-based updates
 - [x] Open game cancellation
 - [ ] Game statistics and leaderboards
@@ -332,13 +333,25 @@ This project implements several security best practices:
 * **SafeERC20**: OpenZeppelin's SafeERC20 used for all token transfers
 * **Event Logging**: Events emitted for all critical actions for transparency
 
-### Security Notes
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-* All inputs are validated
-* State transitions are enforced through a finite state machine
-* Game parameters are immutable once deployed
-* No external calls after state changes
-* Events emitted for all critical actions
+
+
+## Design Tradeoffs & Non-Goals
+
+### Design Tradeoffs
+
+* **Each game is deployed as its own contract** to guarantee isolation and immutability at the cost of higher deployment overhead.
+* **No admin or upgrade hooks are included** to avoid trust assumptions and governance complexity.
+* **USDC is used instead of ETH** to reduce volatility and simplify escrow accounting.
+* **Play clock enforces liveness** rather than relying on offchain arbitration or admin intervention.
+
+### Non-Goals
+
+* No upgradeability or proxy patterns.
+* No offchain arbitration or admin intervention.
+* No shared game state across instances.
+* No support for multiple token types per game.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
