@@ -16,7 +16,7 @@ contract SharksAndTigersGameTest is Test {
     SharksAndTigers internal game1;
     SharksAndTigers internal game2;
 
-    uint256 internal constant WAGER = 100e6; // 100 USDC (6 decimals)
+    uint256 internal constant STAKE = 100e6; // 100 USDC (6 decimals)
     uint256 internal constant PLAY_CLOCK = 3600; // 1 hour
 
     function setUp() public {
@@ -37,15 +37,15 @@ contract SharksAndTigersGameTest is Test {
 
         // game1: walletOne creates with mark Shark (1) at pos 0
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
-        factory.createGame(0, 1, PLAY_CLOCK, WAGER);
+        usdc.approve(address(factory), STAKE);
+        factory.createGame(0, 1, PLAY_CLOCK, STAKE);
         vm.stopPrank();
         game1 = SharksAndTigers(factory.getGameAddress(1));
 
         // game2: walletTwo creates with mark Tiger (2) at pos 5
         vm.startPrank(walletTwo);
-        usdc.approve(address(factory), WAGER);
-        factory.createGame(5, 2, PLAY_CLOCK, WAGER);
+        usdc.approve(address(factory), STAKE);
+        factory.createGame(5, 2, PLAY_CLOCK, STAKE);
         vm.stopPrank();
         game2 = SharksAndTigers(factory.getGameAddress(2));
     }
@@ -81,13 +81,13 @@ contract SharksAndTigersGameTest is Test {
     function test_joinGame_revertsWhenNotOpen() public {
         // walletThree joins, making game1 Active
         vm.startPrank(walletThree);
-        usdc.approve(address(game1), WAGER);
+        usdc.approve(address(game1), STAKE);
         game1.joinGame(6);
         vm.stopPrank();
 
         // another join should revert because game1 is no longer open to joining
         vm.startPrank(walletTwo);
-        usdc.approve(address(game1), WAGER);
+        usdc.approve(address(game1), STAKE);
         vm.expectRevert(bytes("Game is not open to joining"));
         game1.joinGame(7);
         vm.stopPrank();
@@ -96,7 +96,7 @@ contract SharksAndTigersGameTest is Test {
     function test_joinGame_revertsOnOutOfRange() public {
         // acceptable range is 0 - 8
         vm.startPrank(walletThree);
-        usdc.approve(address(game1), WAGER);
+        usdc.approve(address(game1), STAKE);
         vm.expectRevert(bytes("Position is out of range"));
         game1.joinGame(9);
         vm.stopPrank();
@@ -105,7 +105,7 @@ contract SharksAndTigersGameTest is Test {
     function test_joinGame_revertsOnAlreadyMarked() public {
         // Position 0 is already marked because game1 was created with mark Shark at pos 0
         vm.startPrank(walletThree);
-        usdc.approve(address(game1), WAGER);
+        usdc.approve(address(game1), STAKE);
         vm.expectRevert(bytes("Position is already marked"));
         game1.joinGame(0);
         vm.stopPrank();
@@ -114,10 +114,10 @@ contract SharksAndTigersGameTest is Test {
     function test_joinGame_setsStateAndEmitsEvent() public {
         // walletThree joins, making game1 Active
         vm.startPrank(walletThree);
-        usdc.approve(address(game1), WAGER);
+        usdc.approve(address(game1), STAKE);
         vm.expectEmit(true, true, true, false, address(game1));
         emit SharksAndTigers.PlayerTwoJoined(
-            1, address(game1), walletThree, SharksAndTigers.Mark.Tiger, 6, PLAY_CLOCK, WAGER
+            1, address(game1), walletThree, SharksAndTigers.Mark.Tiger, 6, PLAY_CLOCK, STAKE
         );
         game1.joinGame(6);
         vm.stopPrank();
@@ -134,7 +134,7 @@ contract SharksAndTigersGameTest is Test {
 
     function _joinGame1Helper(address player, uint8 pos) internal {
         vm.startPrank(player);
-        usdc.approve(address(game1), WAGER);
+        usdc.approve(address(game1), STAKE);
         game1.joinGame(pos);
         vm.stopPrank();
     }
@@ -170,7 +170,7 @@ contract SharksAndTigersGameTest is Test {
         vm.prank(p1);
         vm.expectEmit(true, true, true, false, address(game1));
         emit SharksAndTigers.MoveMade(
-            1, address(game1), p1, SharksAndTigers.Mark.Shark, 3, PLAY_CLOCK, block.timestamp, WAGER
+            1, address(game1), p1, SharksAndTigers.Mark.Shark, 3, PLAY_CLOCK, block.timestamp, STAKE
         );
         game1.makeMove(3);
         assertEq(uint256(game1.s_gameBoard(3)), uint256(SharksAndTigers.Mark.Shark));
@@ -206,7 +206,7 @@ contract SharksAndTigersGameTest is Test {
             pTwo,
             SharksAndTigers.Mark.Shark,
             SharksAndTigers.Mark.Tiger,
-            WAGER,
+            STAKE,
             PLAY_CLOCK,
             block.timestamp,
             false,
@@ -228,14 +228,14 @@ contract SharksAndTigersGameTest is Test {
 
         // Create a fresh game: start at pos 1 with Shark
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
-        factory.createGame(1, 1, PLAY_CLOCK, WAGER);
+        usdc.approve(address(factory), STAKE);
+        factory.createGame(1, 1, PLAY_CLOCK, STAKE);
         vm.stopPrank();
         SharksAndTigers game = SharksAndTigers(factory.getGameAddress(factory.s_gameCount()));
 
         // playerTwo joins at a safe position
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), WAGER);
+        usdc.approve(address(game), STAKE);
         game.joinGame(2);
         vm.stopPrank();
 
@@ -257,7 +257,7 @@ contract SharksAndTigersGameTest is Test {
             pTwo,
             SharksAndTigers.Mark.Shark,
             SharksAndTigers.Mark.Tiger,
-            WAGER,
+            STAKE,
             PLAY_CLOCK,
             block.timestamp,
             false,
@@ -278,14 +278,14 @@ contract SharksAndTigersGameTest is Test {
          */
         // Create a fresh game: start at pos 2 with Shark
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
-        factory.createGame(2, 1, PLAY_CLOCK, WAGER);
+        usdc.approve(address(factory), STAKE);
+        factory.createGame(2, 1, PLAY_CLOCK, STAKE);
         vm.stopPrank();
         SharksAndTigers game = SharksAndTigers(factory.getGameAddress(factory.s_gameCount()));
 
         // playerTwo joins
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), WAGER);
+        usdc.approve(address(game), STAKE);
         game.joinGame(0);
         vm.stopPrank();
 
@@ -307,7 +307,7 @@ contract SharksAndTigersGameTest is Test {
             pTwo,
             SharksAndTigers.Mark.Shark,
             SharksAndTigers.Mark.Tiger,
-            WAGER,
+            STAKE,
             PLAY_CLOCK,
             block.timestamp,
             false,
@@ -329,13 +329,13 @@ contract SharksAndTigersGameTest is Test {
 
         // Create a fresh game: start at pos 0 with Shark
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
-        factory.createGame(0, 1, PLAY_CLOCK, WAGER);
+        usdc.approve(address(factory), STAKE);
+        factory.createGame(0, 1, PLAY_CLOCK, STAKE);
         vm.stopPrank();
         SharksAndTigers game = SharksAndTigers(factory.getGameAddress(factory.s_gameCount()));
 
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), WAGER);
+        usdc.approve(address(game), STAKE);
         game.joinGame(6);
         vm.stopPrank();
 
@@ -356,7 +356,7 @@ contract SharksAndTigersGameTest is Test {
             pTwo,
             SharksAndTigers.Mark.Shark,
             SharksAndTigers.Mark.Tiger,
-            WAGER,
+            STAKE,
             PLAY_CLOCK,
             block.timestamp,
             false,
@@ -378,13 +378,13 @@ contract SharksAndTigersGameTest is Test {
 
         // Create a fresh game: start at pos 3 with Shark
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
-        factory.createGame(3, 1, PLAY_CLOCK, WAGER);
+        usdc.approve(address(factory), STAKE);
+        factory.createGame(3, 1, PLAY_CLOCK, STAKE);
         vm.stopPrank();
         SharksAndTigers game = SharksAndTigers(factory.getGameAddress(factory.s_gameCount()));
 
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), WAGER);
+        usdc.approve(address(game), STAKE);
         game.joinGame(6);
         vm.stopPrank();
 
@@ -405,7 +405,7 @@ contract SharksAndTigersGameTest is Test {
             pTwo,
             SharksAndTigers.Mark.Shark,
             SharksAndTigers.Mark.Tiger,
-            WAGER,
+            STAKE,
             PLAY_CLOCK,
             block.timestamp,
             false,
@@ -427,13 +427,13 @@ contract SharksAndTigersGameTest is Test {
 
         // Create a fresh game: start at pos 6 with Shark
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
-        factory.createGame(6, 1, PLAY_CLOCK, WAGER);
+        usdc.approve(address(factory), STAKE);
+        factory.createGame(6, 1, PLAY_CLOCK, STAKE);
         vm.stopPrank();
         SharksAndTigers game = SharksAndTigers(factory.getGameAddress(factory.s_gameCount()));
 
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), WAGER);
+        usdc.approve(address(game), STAKE);
         game.joinGame(0);
         vm.stopPrank();
 
@@ -454,7 +454,7 @@ contract SharksAndTigersGameTest is Test {
             pTwo,
             SharksAndTigers.Mark.Shark,
             SharksAndTigers.Mark.Tiger,
-            WAGER,
+            STAKE,
             PLAY_CLOCK,
             block.timestamp,
             false,
@@ -476,13 +476,13 @@ contract SharksAndTigersGameTest is Test {
 
         // Main diagonal: 0,4,8 for playerOne
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
-        factory.createGame(0, 1, PLAY_CLOCK, WAGER);
+        usdc.approve(address(factory), STAKE);
+        factory.createGame(0, 1, PLAY_CLOCK, STAKE);
         vm.stopPrank();
         SharksAndTigers game = SharksAndTigers(factory.getGameAddress(factory.s_gameCount()));
 
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), WAGER);
+        usdc.approve(address(game), STAKE);
         game.joinGame(1);
         vm.stopPrank();
 
@@ -503,7 +503,7 @@ contract SharksAndTigersGameTest is Test {
             pTwo,
             SharksAndTigers.Mark.Shark,
             SharksAndTigers.Mark.Tiger,
-            WAGER,
+            STAKE,
             PLAY_CLOCK,
             block.timestamp,
             false,
@@ -525,13 +525,13 @@ contract SharksAndTigersGameTest is Test {
 
         // Anti-diagonal: 2,4,6 for playerOne
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
-        factory.createGame(2, 1, PLAY_CLOCK, WAGER);
+        usdc.approve(address(factory), STAKE);
+        factory.createGame(2, 1, PLAY_CLOCK, STAKE);
         vm.stopPrank();
         SharksAndTigers game = SharksAndTigers(factory.getGameAddress(factory.s_gameCount()));
 
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), WAGER);
+        usdc.approve(address(game), STAKE);
         game.joinGame(1);
         vm.stopPrank();
 
@@ -552,7 +552,7 @@ contract SharksAndTigersGameTest is Test {
             pTwo,
             SharksAndTigers.Mark.Shark,
             SharksAndTigers.Mark.Tiger,
-            WAGER,
+            STAKE,
             PLAY_CLOCK,
             block.timestamp,
             false,
@@ -598,7 +598,7 @@ contract SharksAndTigersGameTest is Test {
             plTwo,
             SharksAndTigers.Mark.Shark,
             SharksAndTigers.Mark.Tiger,
-            WAGER,
+            STAKE,
             PLAY_CLOCK,
             block.timestamp,
             false,
@@ -615,7 +615,7 @@ contract SharksAndTigersGameTest is Test {
     function test_getGameInfo_returnsAccurateData() public {
         // join then make one move to set lastPlayTime
         vm.startPrank(walletThree);
-        usdc.approve(address(game1), WAGER);
+        usdc.approve(address(game1), STAKE);
         game1.joinGame(1);
         vm.stopPrank();
         vm.prank(walletOne);

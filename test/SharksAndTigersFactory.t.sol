@@ -13,7 +13,7 @@ contract SharksAndTigersFactoryTest is Test {
     address internal walletOne;
     address internal walletTwo;
 
-    uint256 internal constant WAGER = 100e6; // 100 USDC (6 decimals)
+    uint256 internal constant STAKE = 100e6; // 100 USDC (6 decimals)
     uint256 internal constant PLAY_CLOCK = 3600; // 1 hour
 
     function setUp() public {
@@ -43,30 +43,30 @@ contract SharksAndTigersFactoryTest is Test {
 
     function test_createGame_revertsOnInvalidMark() public {
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
+        usdc.approve(address(factory), STAKE);
         vm.expectRevert(bytes("Invalid mark for board"));
 
-        // arg1 is position, arg2 is mark, arg3 is playClock, arg4 is wager
+        // arg1 is position, arg2 is mark, arg3 is playClock, arg4 is stake
         // 0 is Empty, and 1 is Shark, 2 is Tiger, so 0 is invalid
-        factory.createGame(0, 0, PLAY_CLOCK, WAGER);
+        factory.createGame(0, 0, PLAY_CLOCK, STAKE);
         vm.stopPrank();
     }
 
     function test_createGame_revertsOnOutOfRangePosition() public {
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
+        usdc.approve(address(factory), STAKE);
         vm.expectRevert(bytes("Position is out of range"));
 
-        // arg1 is position, arg2 is mark, arg3 is playClock, arg4 is wager
+        // arg1 is position, arg2 is mark, arg3 is playClock, arg4 is stake
         // acceptable range is 0 - 8
-        factory.createGame(9, 1, PLAY_CLOCK, WAGER);
+        factory.createGame(9, 1, PLAY_CLOCK, STAKE);
         vm.stopPrank();
     }
 
     function test_createGame_incrementsGameCountAndStoresMapping() public {
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
-        factory.createGame(0, 1, PLAY_CLOCK, WAGER);
+        usdc.approve(address(factory), STAKE);
+        factory.createGame(0, 1, PLAY_CLOCK, STAKE);
         vm.stopPrank();
 
         assertEq(factory.s_gameCount(), 1);
@@ -83,8 +83,8 @@ contract SharksAndTigersFactoryTest is Test {
         // Record logs then create game
         vm.recordLogs();
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), WAGER);
-        factory.createGame(0, 1, PLAY_CLOCK, WAGER);
+        usdc.approve(address(factory), STAKE);
+        factory.createGame(0, 1, PLAY_CLOCK, STAKE);
         vm.stopPrank();
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
@@ -98,7 +98,7 @@ contract SharksAndTigersFactoryTest is Test {
                 uint256 gameId = uint256(entries[i].topics[1]);
                 address gameContract = address(uint160(uint256(entries[i].topics[2])));
                 address playerOneAddr = address(uint160(uint256(entries[i].topics[3])));
-                (uint8 playerOneMark, uint256 position, uint256 playClock, uint256 wager) =
+                (uint8 playerOneMark, uint256 position, uint256 playClock, uint256 stake) =
                     abi.decode(entries[i].data, (uint8, uint256, uint256, uint256));
 
                 assertEq(gameId, 1);
@@ -107,7 +107,7 @@ contract SharksAndTigersFactoryTest is Test {
                 assertEq(playerOneMark, uint8(SharksAndTigers.Mark.Shark));
                 assertEq(position, 0);
                 assertEq(playClock, PLAY_CLOCK);
-                assertEq(wager, WAGER);
+                assertEq(stake, STAKE);
                 break;
             }
         }

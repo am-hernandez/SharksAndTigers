@@ -22,34 +22,34 @@ contract JoinGame is Script {
 
         // Game parameters from shared config
         uint8 position = GameConfig.PLAYER_TWO_STARTING_POSITION;
-        uint256 wager = GameConfig.WAGER;
+        uint256 stake = GameConfig.STAKE;
 
         vm.startBroadcast();
 
         // On local chains (Anvil), mint USDC to player two if needed
-        UsdcHelper.ensureUsdcBalance(usdcTokenAddress, msg.sender, wager, "player two");
+        UsdcHelper.ensureUsdcBalance(usdcTokenAddress, msg.sender, stake, "player two");
 
         // Check balance and allowance
         uint256 balance = usdc.balanceOf(msg.sender);
         uint256 currentAllowance = usdc.allowance(msg.sender, gameAddress);
         console.log("Player two USDC balance:", balance);
         console.log("Current USDC allowance:", currentAllowance);
-        console.log("Required wager amount:", wager);
+        console.log("Required stake amount:", stake);
 
-        if (balance < wager) {
+        if (balance < stake) {
             if (block.chainid != 31337) {
-                revert("Insufficient USDC balance. Player two needs at least the wager amount.");
+                revert("Insufficient USDC balance. Player two needs at least the stake amount.");
             }
         }
 
         // Approve game contract to spend USDC if needed
-        if (currentAllowance < wager) {
+        if (currentAllowance < stake) {
             console.log("Approving game contract to spend USDC...");
             // Reset to zero first to handle tokens that require zero before new approval
             if (currentAllowance > 0) {
                 usdc.approve(gameAddress, 0);
             }
-            usdc.approve(gameAddress, wager);
+            usdc.approve(gameAddress, stake);
             console.log("Approval successful");
         }
 
@@ -69,7 +69,7 @@ contract JoinGame is Script {
         console.log("Player Two:", playerTwo);
         console.log("Player Two Mark:", GameConfig.PLAYER_TWO_MARK == 1 ? "Shark" : "Tiger");
         console.log("Starting Position:", position);
-        console.log("Wager:", wager / 1e6, "USDC");
+        console.log("Stake:", stake / 1e6, "USDC");
     }
 
     function run() external {

@@ -7,8 +7,8 @@ pragma solidity ^0.8.26;
  * @dev Both CreateGame and JoinGame reference this to ensure consistency
  */
 library GameConfig {
-    // Wager amount in USDC (6 decimals)
-    uint256 public constant WAGER = 5e6; // 5 USDC
+    // Stake amount in USDC (6 decimals)
+    uint256 public constant STAKE = 5e6; // 5 USDC
 
     // Play clock in seconds
     uint256 public constant PLAY_CLOCK = 3600; // 1 hour

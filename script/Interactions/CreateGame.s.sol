@@ -25,40 +25,40 @@ contract CreateGame is Script {
         uint8 position = GameConfig.PLAYER_ONE_STARTING_POSITION;
         uint256 playerOneMark = GameConfig.PLAYER_ONE_MARK;
         uint256 playClock = GameConfig.PLAY_CLOCK;
-        uint256 wager = GameConfig.WAGER;
+        uint256 stake = GameConfig.STAKE;
 
         vm.startBroadcast();
 
         // On local chains (Anvil), mint USDC to player one if needed
-        UsdcHelper.ensureUsdcBalance(usdcTokenAddress, msg.sender, wager, "player one");
+        UsdcHelper.ensureUsdcBalance(usdcTokenAddress, msg.sender, stake, "player one");
 
         // Check balance and allowance
         uint256 balance = usdc.balanceOf(msg.sender);
         uint256 currentAllowance = usdc.allowance(msg.sender, mostRecentlyDeployedFactoryAddress);
         console.log("Player one USDC balance:", balance);
         console.log("Current USDC allowance:", currentAllowance);
-        console.log("Required wager amount:", wager);
+        console.log("Required stake amount:", stake);
 
-        if (balance < wager) {
+        if (balance < stake) {
             if (block.chainid != 31337) {
-                revert("Insufficient USDC balance. Player one needs at least the wager amount.");
+                revert("Insufficient USDC balance. Player one needs at least the stake amount.");
             }
         }
 
         // Approve factory to spend USDC if needed
-        if (currentAllowance < wager) {
+        if (currentAllowance < stake) {
             console.log("Approving factory to spend USDC...");
             // Reset to zero first to handle tokens that require zero before new approval
             if (currentAllowance > 0) {
                 usdc.approve(mostRecentlyDeployedFactoryAddress, 0);
             }
-            usdc.approve(mostRecentlyDeployedFactoryAddress, wager);
+            usdc.approve(mostRecentlyDeployedFactoryAddress, stake);
             console.log("Approval successful");
         }
 
         // Create the game
-        console.log("Creating game with 5 USDC wager...");
-        factory.createGame(position, playerOneMark, playClock, wager);
+        console.log("Creating game with 5 USDC stake...");
+        factory.createGame(position, playerOneMark, playClock, stake);
 
         vm.stopBroadcast();
 
@@ -75,7 +75,7 @@ contract CreateGame is Script {
         console.log("Player One Mark:", playerOneMark == 1 ? "Shark" : "Tiger");
         console.log("Initial Position:", position);
         console.log("Play Clock:", playClock, "seconds");
-        console.log("Wager:", wager / 1e6, "USDC");
+        console.log("Stake:", stake / 1e6, "USDC");
     }
 
     function run() external {

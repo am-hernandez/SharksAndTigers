@@ -12,7 +12,7 @@ import {ERC20Mock} from "@openzeppelin/mocks/token/ERC20Mock.sol";
  */
 library UsdcHelper {
     /**
-     * @notice Mints USDC to the given address on local Anvil chain if balance is insufficient for wager amount
+     * @notice Mints USDC to the given address on local Anvil chain if balance is insufficient for stake amount
      * @param usdcTokenAddress The address of the USDC token contract
      * @param recipient The address to mint USDC to
      * @param requiredAmount The minimum amount of USDC needed
@@ -34,7 +34,7 @@ library UsdcHelper {
 
         if (currentBalance < requiredAmount) {
             ERC20Mock mockUsdc = ERC20Mock(usdcTokenAddress);
-            uint256 amountToMint = requiredAmount * 2; // Mint enough for wager plus some extra
+            uint256 amountToMint = requiredAmount * 2; // Mint enough for stake plus some extra
             mockUsdc.mint(recipient, amountToMint);
             console.log("Minted", amountToMint / 1e6, "USDC to", playerLabel);
             console.log("Recipient:", recipient);
