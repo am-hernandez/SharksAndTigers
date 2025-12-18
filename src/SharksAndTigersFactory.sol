@@ -49,22 +49,20 @@ contract SharksAndTigersFactory {
         (bool hasAllowance,) = _checkAllowance(msg.sender, wager);
         require(hasAllowance, "Insufficient USDC allowance. Please approve the factory to spend your wager amount.");
 
-        // Transfer USDC from player one to this contract first
-        usdc.safeTransferFrom(msg.sender, address(this), wager);
-
         s_gameCount++;
+        uint256 gameId = s_gameCount;
 
         // Deploy game contract
         SharksAndTigers game =
-            new SharksAndTigers(msg.sender, position, playerOneMark, playClock, s_gameCount, i_usdcToken, wager);
-
-        // Transfer USDC from factory to game contract
-        usdc.safeTransfer(address(game), wager);
+            new SharksAndTigers(msg.sender, position, playerOneMark, playClock, gameId, i_usdcToken, wager);
 
         // persist game address for lookups without relying on events
-        s_games[s_gameCount] = address(game);
+        s_games[gameId] = address(game);
 
-        emit GameCreated(s_gameCount, address(game), msg.sender, playerOneMark, position, playClock, wager);
+        // Transfer USDC from player one to game contract
+        usdc.safeTransferFrom(msg.sender, address(game), wager);
+
+        emit GameCreated(gameId, address(game), msg.sender, playerOneMark, position, playClock, wager);
     }
 
     function getGameAddress(uint256 gameId) external view returns (address) {
