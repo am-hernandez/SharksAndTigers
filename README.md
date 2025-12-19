@@ -109,8 +109,8 @@ This section provides instructions on setting up the project locally. To get a l
 
 2. Clone the repo
    ```sh
-   git clone https://github.com/github_username/repo_name.git
-   cd repo_name
+   git clone https://github.com/am-hernandez/SharksAndTigers.git
+   cd SharksAndTigers
    ```
 
 3. Install dependencies
@@ -411,7 +411,7 @@ Project Link: [https://github.com/am-hernandez/SharksAndTigers](https://github.c
 [stars-url]: https://github.com/am-hernandez/SharksAndTigers/stargazers
 [issues-shield]: https://img.shields.io/github/issues/am-hernandez/SharksAndTigers.svg?style=for-the-badge
 [issues-url]: https://github.com/am-hernandez/SharksAndTigers/issues
-[license-shield]: https://img.shields.io/github/license/github_username/repo_name.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/am-hernandez/SharksAndTigers.svg?style=for-the-badge
 [license-url]: https://github.com/am-hernandez/SharksAndTigers/blob/main/LICENSE
 [Solidity]: https://img.shields.io/badge/Solidity-363636?style=for-the-badge&logo=solidity&logoColor=white
 [Solidity-url]: https://soliditylang.org/
