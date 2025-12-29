@@ -23,7 +23,9 @@ contract EscrowManager is AccessControl, ReentrancyGuardTransient {
     /// @notice Thrown when attempting to register a game that is already registered
     error AlreadyRegistered();
     /// @notice Thrown when game address is invalid
-    error InvalidGame();
+    error InvalidGameAddress();
+    /// @notice Thrown when game ID is invalid (zero)
+    error InvalidGameId();
     /// @notice Thrown when USDC token address is invalid
     error InvalidToken();
     /// @notice Thrown when stake amount is invalid (zero or otherwise)
@@ -95,10 +97,11 @@ contract EscrowManager is AccessControl, ReentrancyGuardTransient {
     mapping(address => uint256) public claimable;
 
     /// @notice Emitted when a new game escrow is registered
+    /// @param gameId Unique identifier for the game
     /// @param game Address of the game contract
     /// @param player1 Address of player one
     /// @param stake Stake amount per player
-    event GameRegistered(address indexed game, address indexed player1, uint256 stake);
+    event GameRegistered(uint256 indexed gameId, address indexed game, address indexed player1, uint256 stake);
     /// @notice Emitted when player2 is set for a game escrow
     /// @param game Address of the game contract
     /// @param player2 Address of player two
@@ -147,10 +150,11 @@ contract EscrowManager is AccessControl, ReentrancyGuardTransient {
         external
         onlyRole(FACTORY_ROLE)
     {
-        if (game == address(0)) revert InvalidGame();
+        if (game == address(0)) revert InvalidGameAddress();
         if (player1 == address(0)) revert InvalidPlayer();
         if (stake == 0) revert InvalidStake();
         if (escrows[game].gameId != 0) revert AlreadyRegistered();
+        if (gameId == 0) revert InvalidGameId();
 
         // Register escrow
         escrows[game] = GameEscrow({
@@ -158,7 +162,7 @@ contract EscrowManager is AccessControl, ReentrancyGuardTransient {
             player1: player1,
             player2: address(0),
             stakeAmountPerPlayer: stake,
-            totalStaked: stake,
+            totalStaked: 0,
             stakeDepositedForPlayer1: false,
             stakeDepositedForPlayer2: false,
             finalized: false
@@ -167,24 +171,26 @@ contract EscrowManager is AccessControl, ReentrancyGuardTransient {
         // Grant GAME_ROLE to the specific game contract
         _grantRole(GAME_ROLE, game);
 
-        emit GameRegistered(game, player1, stake);
+        emit GameRegistered(gameId, game, player1, stake);
     }
 
     /// @notice Set player2 for a game escrow (called by Game on join)
     /// @dev Only the game contract itself can set player2 when a player joins.
     /// @dev The game address is derived from msg.sender to ensure only the specific game contract can set its player2.
-    /// @param game Address of the game contract (must match msg.sender)
     /// @param player2 Address of player two joining the game
-    function setPlayer2(address game, address player2) external onlyRole(GAME_ROLE) {
+    function setPlayer2(address player2) external onlyRole(GAME_ROLE) {
         address gameAddress = msg.sender;
         GameEscrow storage gameEscrow = escrows[gameAddress];
+        address player1 = gameEscrow.player1;
+
         if (gameEscrow.gameId == 0) revert GameNotRegistered();
-        if (gameEscrow.player1 == address(0)) revert PlayerOneNotSet();
-        if (player2 == address(0) || player2 == gameEscrow.player1) revert InvalidPlayer();
+        if (player1 == address(0)) revert PlayerOneNotSet();
+        if (!gameEscrow.stakeDepositedForPlayer1) revert PlayerOneNotDeposited();
+        if (player2 == address(0) || player2 == player1) revert InvalidPlayer();
         if (gameEscrow.player2 != address(0)) revert PlayerTwoAlreadySet();
 
         gameEscrow.player2 = player2;
-        emit Player2Set(game, player2);
+        emit Player2Set(gameAddress, player2);
     }
 
     /// @notice Deposit stake from player1 into escrow for this game
