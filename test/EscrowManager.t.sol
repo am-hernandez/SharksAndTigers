@@ -31,7 +31,7 @@ contract EscrowManagerTest is Test {
         gameFactory = new SharksAndTigersFactory(address(usdc));
 
         // Get escrow manager deployed by factory
-        escrowManager = EscrowManager(address(gameFactory.i_escrowManager()));
+        escrowManager = EscrowManager(address(gameFactory.s_escrowManager()));
 
         // Create players
         player1 = makeAddr("player1");
