@@ -30,7 +30,7 @@ contract EscrowManagerTest is Test {
         // Deploy game factory with USDC token address
         gameFactory = new SharksAndTigersFactory(address(usdc));
 
-        // Deploy escrow manager
+        // Get escrow manager deployed by factory
         escrowManager = EscrowManager(address(gameFactory.i_escrowManager()));
 
         // Create players
