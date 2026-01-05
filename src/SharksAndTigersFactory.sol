@@ -53,8 +53,7 @@ contract SharksAndTigersFactory {
 
         EscrowManager escrowManager = i_escrowManager;
 
-        s_gameCount++;
-        uint256 gameId = s_gameCount;
+        uint256 gameId = ++s_gameCount;
 
         // Deploy game contract
         SharksAndTigers game = new SharksAndTigers(
