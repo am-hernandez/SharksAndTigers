@@ -60,13 +60,13 @@ contract SharksAndTigersFactory {
             msg.sender, _position, _playerOneMark, _playClock, gameId, i_usdcToken, _stake, address(escrowManager)
         );
 
+        // persist game address for lookups without relying on events
+        s_games[gameId] = address(game);
+
         // register game with escrow manager
         escrowManager.registerGame(address(game), gameId, msg.sender, _stake);
         // deposit player one stake into escrow
         escrowManager.depositPlayer1(address(game));
-
-        // persist game address for lookups without relying on events
-        s_games[gameId] = address(game);
 
         emit GameCreated(gameId, address(game), msg.sender, _playerOneMark, _position, _playClock, _stake);
     }
