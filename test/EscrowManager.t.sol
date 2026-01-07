@@ -12,7 +12,8 @@ import {SharksAndTigers} from "src/SharksAndTigers.sol";
 
 contract EscrowManagerTest is Test {
     EscrowManager internal escrowManager;
-    ERC20Mock internal usdc;
+    IERC20 internal usdc;
+    ERC20Mock internal usdcMock;
     SharksAndTigersFactory internal gameFactory;
 
     address internal player1;
@@ -25,13 +26,14 @@ contract EscrowManagerTest is Test {
 
     function setUp() public {
         // Deploy mock USDC token (ERC20Mock has 18 decimals, but we treat values as USDC units)
-        usdc = new ERC20Mock();
+        usdcMock = new ERC20Mock();
+        usdc = IERC20(address(usdcMock));
 
         // Deploy game factory with USDC token address
-        gameFactory = new SharksAndTigersFactory(address(usdc));
+        gameFactory = new SharksAndTigersFactory(usdc);
 
         // Get escrow manager deployed by factory
-        escrowManager = EscrowManager(address(gameFactory.s_escrowManager()));
+        escrowManager = EscrowManager(address(gameFactory.i_escrowManager()));
 
         // Create players
         player1 = makeAddr("player1");
@@ -39,9 +41,9 @@ contract EscrowManagerTest is Test {
         player3 = makeAddr("player3");
 
         // Mint mock USDC to players
-        usdc.mint(player1, PLAYER_INITIAL_BALANCE);
-        usdc.mint(player2, PLAYER_INITIAL_BALANCE);
-        usdc.mint(player3, PLAYER_INITIAL_BALANCE);
+        usdcMock.mint(player1, PLAYER_INITIAL_BALANCE);
+        usdcMock.mint(player2, PLAYER_INITIAL_BALANCE);
+        usdcMock.mint(player3, PLAYER_INITIAL_BALANCE);
 
         // Approve escrow manager to spend USDC for all players
         vm.prank(player1);
@@ -64,11 +66,12 @@ contract EscrowManagerTest is Test {
         internal
         returns (uint256 gameId, address gameAddress)
     {
+        SharksAndTigers.Mark playerMark = mark == 1 ? SharksAndTigers.Mark.Shark : SharksAndTigers.Mark.Tiger;
         vm.prank(player);
-        gameFactory.createGame(position, mark, clock, stake);
+        gameFactory.createGame(position, playerMark, clock, stake);
 
-        gameId = gameFactory.getGameCount();
-        gameAddress = gameFactory.getGameAddress(gameId);
+        gameId = gameFactory.s_gameCount();
+        gameAddress = gameFactory.s_games(gameId);
 
         return (gameId, gameAddress);
     }
@@ -89,8 +92,8 @@ contract EscrowManagerTest is Test {
 
         assertEq(gameId, 1);
         assertTrue(gameAddress != address(0));
-        assertEq(gameFactory.getGameCount(), 1);
-        assertEq(gameFactory.getGameAddress(1), gameAddress);
+        assertEq(gameFactory.s_gameCount(), 1);
+        assertEq(gameFactory.s_games(1), gameAddress);
 
         // Verify game is registered and player1 deposited - unpack all fields
         (
@@ -122,13 +125,14 @@ contract EscrowManagerTest is Test {
     function test_createGame_emitsEvent() public {
         vm.recordLogs();
         uint8 position = 0;
-        uint256 mark = 1; // Shark
-        (uint256 gameId, address gameAddress) = _createGame(player1, position, mark, PLAY_CLOCK, STAKE);
+        SharksAndTigers.Mark mark = SharksAndTigers.Mark.Shark;
+        (uint256 gameId, address gameAddress) = _createGame(player1, position, 1, PLAY_CLOCK, STAKE);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         // Find the GameCreated event from factory
-        // Event signature: GameCreated(uint256,address,address,uint8,uint256,uint256,uint256,address)
-        bytes32 gameCreatedSig = keccak256("GameCreated(uint256,address,address,uint8,uint256,uint256,uint256,address)");
+        // Event signature: GameCreated(uint256,address,address,uint8,uint256,uint256,uint256)
+        // Note: SharksAndTigers.Mark is encoded as uint8 in the event
+        bytes32 gameCreatedSig = keccak256("GameCreated(uint256,address,address,uint8,uint256,uint256,uint256)");
         bool found = false;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] == gameCreatedSig) {
@@ -139,20 +143,14 @@ contract EscrowManagerTest is Test {
                 assertEq(address(uint160(uint256(logs[i].topics[2]))), gameAddress, "Game address in event mismatch");
                 assertEq(address(uint160(uint256(logs[i].topics[3]))), player1, "Player1 address in event mismatch");
 
-                // Decode and verify all data fields: (uint8 mark, uint256 position, uint256 playClock, uint256 stake, address escrowManager)
-                (
-                    uint8 eventMark,
-                    uint256 eventPosition,
-                    uint256 eventPlayClock,
-                    uint256 eventStake,
-                    address eventEscrowManager
-                ) = abi.decode(logs[i].data, (uint8, uint256, uint256, uint256, address));
+                // Decode and verify all data fields: (uint8 mark, uint256 position, uint256 playClock, uint256 stake)
+                (uint8 eventMark, uint256 eventPosition, uint256 eventPlayClock, uint256 eventStake) =
+                    abi.decode(logs[i].data, (uint8, uint256, uint256, uint256));
 
-                assertEq(eventMark, mark, "Mark in event mismatch");
+                assertEq(eventMark, uint8(mark), "Mark in event mismatch");
                 assertEq(eventPosition, position, "Position in event mismatch");
                 assertEq(eventPlayClock, PLAY_CLOCK, "Play clock in event mismatch");
                 assertEq(eventStake, STAKE, "Stake in event mismatch");
-                assertEq(eventEscrowManager, address(escrowManager), "Escrow manager address in event mismatch");
 
                 break;
             }
@@ -163,11 +161,11 @@ contract EscrowManagerTest is Test {
     function test_createGame_incrementsGameCount() public {
         (uint256 gameId1,) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
         assertEq(gameId1, 1);
-        assertEq(gameFactory.getGameCount(), 1);
+        assertEq(gameFactory.s_gameCount(), 1);
 
         (uint256 gameId2,) = _createGame(player2, 5, 2, PLAY_CLOCK, STAKE);
         assertEq(gameId2, 2);
-        assertEq(gameFactory.getGameCount(), 2);
+        assertEq(gameFactory.s_gameCount(), 2);
     }
 
     function test_createGame_revertsWhenInsufficientAllowance() public {
@@ -176,7 +174,7 @@ contract EscrowManagerTest is Test {
         usdc.approve(address(escrowManager), 0);
         // EscrowManager checks allowance and will revert with ERC20InsufficientAllowance or custom error
         vm.expectRevert();
-        gameFactory.createGame(0, 1, PLAY_CLOCK, STAKE);
+        gameFactory.createGame(0, SharksAndTigers.Mark.Shark, PLAY_CLOCK, STAKE);
         vm.stopPrank();
     }
 
@@ -823,7 +821,7 @@ contract EscrowManagerTest is Test {
 
     function test_nonGame_cannotFinalize() public {
         // Create a game
-        (, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
         bytes32 gameRole = escrowManager.GAME_ROLE();
         // Try to finalize as non-game (should fail)
         vm.expectRevert(
