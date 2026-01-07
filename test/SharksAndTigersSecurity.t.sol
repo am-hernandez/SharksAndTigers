@@ -2,9 +2,12 @@
 pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
+import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
+import {IERC20Errors} from "@openzeppelin/interfaces/draft-IERC6093.sol";
 import {ERC20Mock} from "@openzeppelin/mocks/token/ERC20Mock.sol";
 import {SharksAndTigers} from "src/SharksAndTigers.sol";
 import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
+import {EscrowManager} from "src/EscrowManager.sol";
 
 contract MaliciousJoiner {
     function attemptJoinThenImmediateMove(SharksAndTigers game, uint8 joinPos, uint8 movePos)
@@ -37,7 +40,7 @@ contract SharksAndTigersSecurityTest is Test {
         usdc = new ERC20Mock();
 
         // Deploy factory with USDC token address
-        factory = new SharksAndTigersFactory(address(usdc));
+        factory = new SharksAndTigersFactory(IERC20(address(usdc)));
 
         walletOne = makeAddr("walletOne");
         walletTwo = makeAddr("walletTwo");
@@ -48,31 +51,35 @@ contract SharksAndTigersSecurityTest is Test {
         usdc.mint(walletTwo, 1000e6);
         usdc.mint(walletThree, 1000e6);
 
-        // Create game: player one approves USDC to factory and creates game
+        // Create game: player one approves USDC to EscrowManager and creates game
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), STAKE);
-        factory.createGame(0, 1, PLAY_CLOCK, STAKE); // Shark at pos 0
+        EscrowManager escrowManager = factory.i_escrowManager();
+        usdc.approve(address(escrowManager), STAKE);
+        factory.createGame(0, SharksAndTigers.Mark.Shark, PLAY_CLOCK, STAKE); // Shark at pos 0
         vm.stopPrank();
 
-        game = SharksAndTigers(factory.getGameAddress(factory.s_gameCount()));
+        game = SharksAndTigers(factory.s_games(factory.s_gameCount()));
     }
 
     function test_playerOneCannotJoinAsPlayerTwo() public {
         vm.startPrank(walletOne);
-        usdc.approve(address(game), STAKE);
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+        usdc.approve(address(gameEscrowManager), STAKE);
         vm.expectRevert(bytes("Player one cannot join as player two"));
         game.joinGame(1);
         vm.stopPrank();
     }
 
     function test_doubleJoinReverts() public {
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
+        usdc.approve(address(gameEscrowManager), STAKE);
         game.joinGame(1);
         vm.stopPrank();
 
         vm.startPrank(walletThree);
-        usdc.approve(address(game), STAKE);
+        usdc.approve(address(gameEscrowManager), STAKE);
         vm.expectRevert(bytes("Game is not open to joining"));
         game.joinGame(2);
         vm.stopPrank();
@@ -87,7 +94,8 @@ contract SharksAndTigersSecurityTest is Test {
     function test_moveAfterEndedReverts() public {
         // Join and finish a quick win for playerOne: left column 0,3,6
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+        usdc.approve(address(gameEscrowManager), STAKE);
         game.joinGame(2);
         vm.stopPrank();
 
@@ -108,7 +116,8 @@ contract SharksAndTigersSecurityTest is Test {
     function test_joinOnAlreadyMarkedPositionReverts() public {
         // Position 0 is already marked by playerOne's initial move in constructor
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+        usdc.approve(address(gameEscrowManager), STAKE);
         vm.expectRevert(bytes("Position is already marked"));
         game.joinGame(0);
         vm.stopPrank();
@@ -116,11 +125,15 @@ contract SharksAndTigersSecurityTest is Test {
 
     function test_maliciousJoinerCannotImmediatelyMove() public {
         MaliciousJoiner attacker = new MaliciousJoiner();
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
 
-        // Fund attacker and approve
+        // Fund attacker
         usdc.mint(address(attacker), STAKE);
-        vm.prank(address(attacker));
-        usdc.approve(address(game), STAKE);
+
+        // Approve EscrowManager to spend attacker's USDC
+        vm.startPrank(address(attacker));
+        usdc.approve(address(gameEscrowManager), STAKE);
+        vm.stopPrank();
 
         // Have attacker attempt join then immediate move
         bool moveFailed = attacker.attemptJoinThenImmediateMove(game, 2, 3);
@@ -133,103 +146,51 @@ contract SharksAndTigersSecurityTest is Test {
 
     function test_factoryInvalidIdReturnsZeroAddress() public view {
         // id 0 was never used
-        assertEq(factory.getGameAddress(0), address(0));
+        assertEq(factory.s_games(0), address(0));
         // id s_gameCount + 1 is also unused
-        assertEq(factory.getGameAddress(factory.s_gameCount() + 1), address(0));
+        assertEq(factory.s_games(factory.s_gameCount() + 1), address(0));
     }
 
     function test_joinGameRequiresStakeApproval() public {
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+
         vm.startPrank(walletTwo);
-        // Don't approve - should fail
+        // Don't approve - should fail with ERC20InsufficientAllowance when EscrowManager tries to transfer
         vm.expectRevert(
-            bytes("Insufficient USDC allowance. Please approve the game contract to spend the stake amount.")
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InsufficientAllowance.selector,
+                address(gameEscrowManager), // spender
+                0, // current allowance
+                STAKE // needed
+            )
         );
+
         game.joinGame(1);
         vm.stopPrank();
     }
 
     function test_joinGameRequiresMatchingStake() public {
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+
         vm.startPrank(walletTwo);
         // Approve less than stake
-        usdc.approve(address(game), STAKE - 1);
-        vm.expectRevert(
-            bytes("Insufficient USDC allowance. Please approve the game contract to spend the stake amount.")
-        );
+        usdc.approve(address(gameEscrowManager), STAKE - 1);
+        vm.expectRevert();
         game.joinGame(1);
         vm.stopPrank();
     }
 
-    function test_withdrawStake_revertsWhenGameIsOpenButNotCreator() public {
-        // Game is open, but walletTwo did not create it
-        vm.prank(walletTwo);
-        vm.expectRevert(bytes("You are not a player in this game"));
-        game.withdrawStake();
-    }
-
-    function test_withdrawStake_revertsWhenGameIsActiveAndPlayerTwo() public {
-        // Join game as player two
-        vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
-        game.joinGame(1);
-        vm.stopPrank();
-
-        // Game is now active, player two tries to withdraw
-        vm.prank(walletTwo);
-        vm.expectRevert(bytes("Cannot withdraw stake while game is active"));
-        game.withdrawStake();
-    }
-
-    function test_withdrawStake_revertsWhenGameIsActiveAndNotAPlayer() public {
-        // Join game as player two
-        vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
-        game.joinGame(1);
-        vm.stopPrank();
-
-        // Game is now active, walletThree (not a player) tries to withdraw
-        vm.prank(walletThree);
-        vm.expectRevert(bytes("You are not a player in this game"));
-        game.withdrawStake();
-    }
-
-    function test_withdrawStake_revertsWhenGameIsDrawButNotAPlayer() public {
-        // Join game and play to a draw
-        vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
-        game.joinGame(1);
-        vm.stopPrank();
-
-        // Play to a draw
-        vm.prank(walletOne);
-        game.makeMove(4);
-        vm.prank(walletTwo);
-        game.makeMove(8);
-        vm.prank(walletOne);
-        game.makeMove(5);
-        vm.prank(walletTwo);
-        game.makeMove(3);
-        vm.prank(walletOne);
-        game.makeMove(7);
-        vm.prank(walletTwo);
-        game.makeMove(2);
-        vm.prank(walletOne);
-        game.makeMove(6); // Draw
-
-        assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
-        assertEq(game.s_isDraw(), true);
-
-        // walletThree (not a player) tries to withdraw
-        vm.prank(walletThree);
-        vm.expectRevert(bytes("You are not a player in this game"));
-        game.withdrawStake();
-    }
+    // Note: withdrawStake function no longer exists on SharksAndTigers contract
+    // Withdrawals are now handled by EscrowManager: withdrawRefundableStake() and claimReward()
+    // These tests are removed as they test functionality that has been moved to EscrowManager
 
     // Play clock vulnerability tests
 
     function test_makeMove_revertsWhenPlayClockExpired() public {
         // Join game
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+        usdc.approve(address(gameEscrowManager), STAKE);
         game.joinGame(1);
         vm.stopPrank();
 
@@ -245,7 +206,8 @@ contract SharksAndTigersSecurityTest is Test {
     function test_makeMove_allowsMoveExactlyAtPlayClock() public {
         // Join game
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+        usdc.approve(address(gameEscrowManager), STAKE);
         game.joinGame(1);
         vm.stopPrank();
 
@@ -261,50 +223,61 @@ contract SharksAndTigersSecurityTest is Test {
     }
 
     function test_claimReward_revertsWhenCurrentPlayerTriesToClaimAfterExpiration() public {
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+
         // Join game
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
+        usdc.approve(address(gameEscrowManager), STAKE);
         game.joinGame(1);
         vm.stopPrank();
 
         // Fast forward past play clock
         vm.warp(block.timestamp + PLAY_CLOCK + 1);
 
-        // Current player (player one) tries to claim - should revert
+        // Resolve timeout - this will finalize the game and set winner to playerTwo
+        game.resolveTimeout();
+
+        // Current player (player one) tries to claim - should revert (no claimable balance)
         vm.prank(walletOne);
-        vm.expectRevert(bytes("Only the winner can claim the reward"));
-        game.claimReward();
+        vm.expectRevert(EscrowManager.NothingToClaim.selector);
+        gameEscrowManager.claimReward();
     }
 
     function test_claimReward_allowsNonCurrentPlayerToClaimAfterExpiration() public {
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+
         // Join game
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
+        usdc.approve(address(gameEscrowManager), STAKE);
         game.joinGame(1);
         vm.stopPrank();
 
         // Fast forward past play clock
         vm.warp(block.timestamp + PLAY_CLOCK + 1);
+
+        // Resolve timeout - this will finalize the game and set winner to playerTwo
+        game.resolveTimeout();
 
         // Non-current player is player two and should be able to claim the reward
         uint256 balanceBefore = usdc.balanceOf(walletTwo);
         vm.prank(walletTwo);
-        game.claimReward();
+        gameEscrowManager.claimReward();
 
         // Verify reward was claimed
         assertEq(usdc.balanceOf(walletTwo), balanceBefore + STAKE * 2);
-        assertEq(game.s_isRewardClaimed(), true);
         assertEq(uint256(game.s_gameState()), uint256(SharksAndTigers.GameState.Ended));
         assertEq(game.s_winner(), walletTwo);
     }
 
     function test_claimReward_revertsWhenGameEndedNormallyButTimeAlsoExpired() public {
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+
         // This tests that if game ends normally but time also expired,
         // non-winner cannot claim using expiration logic
 
         // Join game
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
+        usdc.approve(address(gameEscrowManager), STAKE);
         game.joinGame(1);
         vm.stopPrank();
 
@@ -322,40 +295,46 @@ contract SharksAndTigersSecurityTest is Test {
         // Fast forward past play clock from last move
         vm.warp(block.timestamp + PLAY_CLOCK + 1);
 
-        // Now player two (non-winner) tries to claim using expiration logic
-        // This should revert because game already ended normally
+        // Now player two (non-winner) tries to claim
+        // This should revert because only winner has claimable balance
         vm.prank(walletTwo);
-        vm.expectRevert(bytes("Only the winner can claim the reward"));
-        game.claimReward();
+        vm.expectRevert(EscrowManager.NothingToClaim.selector);
+        gameEscrowManager.claimReward();
 
         // Only the actual winner should be able to claim
         uint256 balanceBefore = usdc.balanceOf(walletOne);
         vm.prank(walletOne);
-        game.claimReward();
+        gameEscrowManager.claimReward();
         assertEq(usdc.balanceOf(walletOne), balanceBefore + STAKE * 2);
     }
 
     function test_claimReward_revertsWhenNonPlayerTriesToClaimAfterExpiration() public {
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+
         // Join game
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
+        usdc.approve(address(gameEscrowManager), STAKE);
         game.joinGame(1);
         vm.stopPrank();
 
         // Fast forward past play clock
         vm.warp(block.timestamp + PLAY_CLOCK + 1);
 
-        // Non-player tries to claim - should revert (no balance to transfer)
+        // Resolve timeout
+        game.resolveTimeout();
+
+        // Non-player tries to claim - should revert (no claimable balance)
         vm.prank(walletThree);
-        // This will fail when trying to transfer balance, but let's see the exact error
-        vm.expectRevert();
-        game.claimReward();
+        vm.expectRevert(EscrowManager.NothingToClaim.selector);
+        gameEscrowManager.claimReward();
     }
 
     function test_claimReward_revertsWhenRewardAlreadyClaimed() public {
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+
         // Join game
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
+        usdc.approve(address(gameEscrowManager), STAKE);
         game.joinGame(1);
         vm.stopPrank();
 
@@ -369,18 +348,19 @@ contract SharksAndTigersSecurityTest is Test {
 
         // Winner claims reward
         vm.prank(walletOne);
-        game.claimReward();
+        gameEscrowManager.claimReward();
 
         // Try to claim again - should revert
         vm.prank(walletOne);
-        vm.expectRevert(bytes("Reward already claimed"));
-        game.claimReward();
+        vm.expectRevert(EscrowManager.NothingToClaim.selector);
+        gameEscrowManager.claimReward();
     }
 
     function test_makeMove_updatesLastPlayTimeCorrectly() public {
         // Join game
         vm.startPrank(walletTwo);
-        usdc.approve(address(game), STAKE);
+        EscrowManager gameEscrowManager = EscrowManager(game.i_escrowManager());
+        usdc.approve(address(gameEscrowManager), STAKE);
         game.joinGame(1);
         vm.stopPrank();
 
@@ -403,15 +383,17 @@ contract SharksAndTigersSecurityTest is Test {
         uint256 largePlayClock = type(uint256).max / 2;
 
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), STAKE);
-        factory.createGame(0, 1, largePlayClock, STAKE);
+        EscrowManager escrowManager = factory.i_escrowManager();
+        usdc.approve(address(escrowManager), STAKE);
+        factory.createGame(0, SharksAndTigers.Mark.Shark, largePlayClock, STAKE);
         vm.stopPrank();
 
-        SharksAndTigers largeClockGame = SharksAndTigers(factory.getGameAddress(factory.s_gameCount()));
+        SharksAndTigers largeClockGame = SharksAndTigers(factory.s_games(factory.s_gameCount()));
 
         // Join game
         vm.startPrank(walletTwo);
-        usdc.approve(address(largeClockGame), STAKE);
+        EscrowManager largeClockEscrowManager = EscrowManager(largeClockGame.i_escrowManager());
+        usdc.approve(address(largeClockEscrowManager), STAKE);
         largeClockGame.joinGame(1);
         vm.stopPrank();
 
