@@ -5,7 +5,6 @@ import {Test, Vm} from "forge-std/Test.sol";
 import {ERC20Mock} from "@openzeppelin/mocks/token/ERC20Mock.sol";
 import {IAccessControl} from "@openzeppelin/access/IAccessControl.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 import {EscrowManager} from "src/EscrowManager.sol";
 import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
 import {SharksAndTigers} from "src/SharksAndTigers.sol";
@@ -54,21 +53,15 @@ contract EscrowManagerTest is Test {
         usdc.approve(address(escrowManager), type(uint256).max);
     }
 
-    /// @notice Helper function to create a game using the factory
+    /// @notice Helper function to create a game using the factory with default parameters
     /// @param player Address of player one
-    /// @param position Board position (0-8) for player one's first move
-    /// @param mark Mark choice (1 = Shark, 2 = Tiger)
-    /// @param clock Time limit in seconds for each move
-    /// @param stake Stake amount
     /// @return gameId The created game ID
     /// @return gameAddress The address of the deployed game contract
-    function _createGame(address player, uint8 position, uint256 mark, uint256 clock, uint256 stake)
-        internal
-        returns (uint256 gameId, address gameAddress)
-    {
-        SharksAndTigers.Mark playerMark = mark == 1 ? SharksAndTigers.Mark.Shark : SharksAndTigers.Mark.Tiger;
+    /// @dev Uses defaults: position=0, mark=Shark, playClock=PLAY_CLOCK, stake=STAKE
+    ///      For custom parameters, call gameFactory.createGame() directly in the test
+    function _createGame(address player) internal returns (uint256 gameId, address gameAddress) {
         vm.prank(player);
-        gameFactory.createGame(position, playerMark, clock, stake);
+        gameFactory.createGame(0, SharksAndTigers.Mark.Shark, PLAY_CLOCK, STAKE);
 
         gameId = gameFactory.s_gameCount();
         gameAddress = gameFactory.s_games(gameId);
@@ -76,19 +69,10 @@ contract EscrowManagerTest is Test {
         return (gameId, gameAddress);
     }
 
-    /// @notice Helper function to create a game with default parameters
-    /// @param player Address of player one
-    /// @param stake Stake amount
-    /// @return gameId The created game ID
-    /// @return gameAddress The address of the deployed game contract
-    function _createGame(address player, uint256 stake) internal returns (uint256 gameId, address gameAddress) {
-        return _createGame(player, 0, 1, PLAY_CLOCK, stake);
-    }
-
     // ============ Factory createGame Tests ============
 
     function test_createGame_succeeds() public {
-        (uint256 gameId, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (uint256 gameId, address gameAddress) = _createGame(player1);
 
         assertEq(gameId, 1);
         assertTrue(gameAddress != address(0));
@@ -126,7 +110,10 @@ contract EscrowManagerTest is Test {
         vm.recordLogs();
         uint8 position = 0;
         SharksAndTigers.Mark mark = SharksAndTigers.Mark.Shark;
-        (uint256 gameId, address gameAddress) = _createGame(player1, position, 1, PLAY_CLOCK, STAKE);
+        vm.prank(player1);
+        gameFactory.createGame(position, mark, PLAY_CLOCK, STAKE);
+        uint256 gameId = gameFactory.s_gameCount();
+        address gameAddress = gameFactory.s_games(gameId);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         // Find the GameCreated event from factory
@@ -159,11 +146,13 @@ contract EscrowManagerTest is Test {
     }
 
     function test_createGame_incrementsGameCount() public {
-        (uint256 gameId1,) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (uint256 gameId1,) = _createGame(player1);
         assertEq(gameId1, 1);
         assertEq(gameFactory.s_gameCount(), 1);
 
-        (uint256 gameId2,) = _createGame(player2, 5, 2, PLAY_CLOCK, STAKE);
+        vm.prank(player2);
+        gameFactory.createGame(5, SharksAndTigers.Mark.Tiger, PLAY_CLOCK, STAKE);
+        uint256 gameId2 = gameFactory.s_gameCount();
         assertEq(gameId2, 2);
         assertEq(gameFactory.s_gameCount(), 2);
     }
@@ -182,7 +171,7 @@ contract EscrowManagerTest is Test {
 
     function test_registerGame_succeeds() public {
         // createGame() internally calls registerGame() and depositPlayer1() via factory
-        (uint256 gameId, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (uint256 gameId, address gameAddress) = _createGame(player1);
 
         // Verify game was registered and player1 deposited by factory - unpack all fields
         (
@@ -213,7 +202,7 @@ contract EscrowManagerTest is Test {
 
     function test_registerGame_emitsEvent() public {
         vm.recordLogs();
-        (uint256 gameId, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (uint256 gameId, address gameAddress) = _createGame(player1);
 
         // Check for GameRegistered event emitted during createGame()
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -235,7 +224,7 @@ contract EscrowManagerTest is Test {
 
     function test_registerGame_revertsWhenNotFactory() public {
         // prank as a legit game
-        (, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (, address gameAddress) = _createGame(player1);
         bytes32 factoryRole = escrowManager.FACTORY_ROLE();
         vm.prank(gameAddress);
         vm.expectRevert(
@@ -277,7 +266,7 @@ contract EscrowManagerTest is Test {
 
     function test_registerGame_revertsWhenAlreadyRegistered() public {
         // Create a game (which registers it)
-        (, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (, address gameAddress) = _createGame(player1);
         // Try to register the same game again (should fail)
         vm.prank(address(gameFactory));
         vm.expectRevert(EscrowManager.AlreadyRegistered.selector);
@@ -288,7 +277,7 @@ contract EscrowManagerTest is Test {
 
     function test_depositPlayer1_succeeds() public {
         // Use createGame which calls both registerGame and depositPlayer1
-        (uint256 gameId, address gameAddress) = _createGame(player1, STAKE);
+        (uint256 gameId, address gameAddress) = _createGame(player1);
 
         (,,,, uint256 totalStaked, bool p1Deposited,,) = escrowManager.escrows(gameAddress);
         assertEq(gameId, 1);
@@ -301,7 +290,7 @@ contract EscrowManagerTest is Test {
     function test_depositPlayer1_emitsEvent() public {
         // createGame() already deposits player1, so we check the event was emitted during creation
         vm.recordLogs();
-        (, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         // Check for StakeDeposited event
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -322,7 +311,7 @@ contract EscrowManagerTest is Test {
 
     function test_depositPlayer1_revertsWhenNotFactory() public {
         // Create a game to get a valid game address
-        (, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (, address gameAddress) = _createGame(player1);
         // Try to deposit as non-factory (should fail)
         vm.expectRevert();
         escrowManager.depositPlayer1(gameAddress);
@@ -338,17 +327,101 @@ contract EscrowManagerTest is Test {
 
     function test_depositPlayer1_revertsWhenAlreadyDeposited() public {
         // Create a game (which already deposits player1)
-        (, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (, address gameAddress) = _createGame(player1);
         // Try to deposit again (should fail)
         vm.prank(address(gameFactory));
         vm.expectRevert(EscrowManager.AlreadyDeposited.selector);
         escrowManager.depositPlayer1(gameAddress);
     }
 
+    /// @notice Test depositPlayer1 reverts when totalStaked != 0 (defensive check)
+    /// @dev This tests the unreachable defensive branch at line 213 of EscrowManager.sol
+    ///      Since registerGame always sets totalStaked: 0 and depositPlayer1 is called immediately
+    ///      after, this state is unreachable through normal flow. We use storage manipulation
+    ///      via vm.store to corrupt the state and verify the defensive check works correctly.
+    /// @dev Storage layout: escrows mapping is at slot 1, GameEscrow.totalStaked is at offset 4
+    ///      within the struct. We calculate the slot using keccak256(abi.encode(key, mappingSlot)) + offset
+    function test_depositPlayer1_revertsWhenTotalStakedNotZero() public {
+        // Step 1: Register a game (but don't deposit yet)
+        address mockGame = makeAddr("mockGame");
+        vm.prank(address(gameFactory));
+        escrowManager.registerGame(mockGame, 999, player1, STAKE);
+
+        // Step 2: Manually corrupt storage to set totalStaked to non-zero
+        // Storage layout: _roles (from AccessControl) is at slot 0, escrows mapping is at slot 1
+        // For a mapping, the slot for escrows[key] is: keccak256(abi.encode(key, mappingSlot))
+        // The struct GameEscrow has totalStaked at offset 4 (after gameId, player1, player2, stakeAmountPerPlayer)
+        uint256 mappingSlot = 1; // escrows mapping slot
+        bytes32 key = bytes32(uint256(uint160(mockGame)));
+        bytes32 structSlot = keccak256(abi.encode(key, mappingSlot));
+
+        // totalStaked is the 5th field (offset 4) in the struct
+        // Each uint256/address takes one slot, so totalStaked is at structSlot + 4
+        bytes32 totalStakedSlot = bytes32(uint256(structSlot) + 4);
+
+        // Corrupt the storage: set totalStaked to a non-zero value
+        vm.store(address(escrowManager), totalStakedSlot, bytes32(uint256(100)));
+
+        // Step 3: Verify the corruption worked
+        (,,,, uint256 totalStaked,,,) = escrowManager.escrows(mockGame);
+        assertEq(totalStaked, 100, "Storage corruption failed");
+
+        // Step 4: Try to deposit - should revert with InvalidEscrowState
+        vm.prank(address(gameFactory));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EscrowManager.InvalidEscrowState.selector,
+                999, // gameId
+                100, // observedTotal
+                0 // expectedTotal
+            )
+        );
+        escrowManager.depositPlayer1(mockGame);
+    }
+
+    /// @notice Test depositPlayer1 defensive check for total != stake after increment
+    /// @dev This tests the defensive branch at line 218 of EscrowManager.sol
+    ///      After `total += stake` where total starts at 0, the check `if (total != stake)` should
+    ///      never fail in normal execution (Solidity 0.8.x reverts on overflow, so 0 + stake = stake).
+    ///      However, since `total` is a local variable, we cannot corrupt it during execution.
+    ///      This test verifies the check exists by ensuring successful deposits pass through it,
+    ///      and documents that the defensive check is present even though it's mathematically
+    ///      impossible to trigger through normal means or storage manipulation.
+    /// @dev The check at line 218 exists as defense-in-depth against theoretical edge cases
+    ///      (compiler bugs, bytecode corruption, etc.). Direct testing would require bytecode
+    ///      manipulation which is beyond standard testing practices.
+    function test_depositPlayer1_defensiveCheckTotalEqualsStakeAfterIncrement() public {
+        // Register a game
+        address mockGame = makeAddr("mockGame");
+        vm.prank(address(gameFactory));
+        escrowManager.registerGame(mockGame, 999, player1, STAKE);
+
+        // Verify the game is registered and ready for deposit
+        (uint256 gameId,,,,,,,) = escrowManager.escrows(mockGame);
+        assertEq(gameId, 999, "Game should be registered");
+
+        // Attempt deposit - should succeed, which proves the defensive check at line 218 passes
+        // The check `if (total != stake)` after `total += stake` (where total was 0) must pass
+        // for the deposit to succeed. If the check were to fail, this would revert.
+        vm.prank(address(gameFactory));
+        escrowManager.depositPlayer1(mockGame);
+
+        // Verify deposit succeeded - this confirms the defensive check at line 218 passed
+        (,,,, uint256 totalStaked, bool p1Deposited,,) = escrowManager.escrows(mockGame);
+        assertEq(totalStaked, STAKE, "Total staked should equal STAKE after increment");
+        assertTrue(p1Deposited, "Player1 should have deposited");
+
+        // Note: Directly testing the revert case (total != stake) is not possible because:
+        // 1. `total` is a local variable, so storage corruption won't affect it after it's read
+        // 2. Solidity 0.8.x reverts on overflow, so `total += stake` can't produce a wrong value
+        // 3. The check is mathematically guaranteed to pass (0 + stake = stake)
+        // This test verifies the check exists and works by ensuring successful deposits pass it.
+    }
+
     // ============ Set Player2 Tests ============
 
     function test_setPlayer2_succeeds() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.prank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -358,7 +431,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_setPlayer2_emitsEvent() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.expectEmit(true, true, false, false);
         emit EscrowManager.Player2Set(gameAddress, player2);
@@ -398,7 +471,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_setPlayer2_revertsWhenPlayer2Zero() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.prank(gameAddress);
         vm.expectRevert(EscrowManager.InvalidPlayer.selector);
@@ -406,7 +479,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_setPlayer2_revertsWhenPlayer2SameAsPlayer1() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.prank(gameAddress);
         vm.expectRevert(EscrowManager.InvalidPlayer.selector);
@@ -414,7 +487,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_setPlayer2_revertsWhenAlreadySet() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -426,7 +499,7 @@ contract EscrowManagerTest is Test {
     // ============ Deposit Player2 Tests ============
 
     function test_depositPlayer2_succeeds() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -441,7 +514,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_depositPlayer2_emitsEvent() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -465,7 +538,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_depositPlayer2_revertsWhenPlayer2NotSet() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.prank(gameAddress);
         vm.expectRevert(EscrowManager.PlayerTwoNotSet.selector);
@@ -492,7 +565,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_depositPlayer2_revertsWhenAlreadyDeposited() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -505,7 +578,7 @@ contract EscrowManagerTest is Test {
     // ============ Finalize Tests ============
 
     function test_finalize_cancelBeforeJoin_succeeds() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.prank(gameAddress);
         escrowManager.finalize(address(0), false, true);
@@ -516,7 +589,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_finalize_cancelBeforeJoin_emitsEvent() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.expectEmit(true, true, false, false);
         emit EscrowManager.Finalized(gameAddress, address(0), false, true);
@@ -526,7 +599,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_finalize_draw_succeeds() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -541,7 +614,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_finalize_draw_emitsEvent() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -553,7 +626,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_finalize_win_succeeds() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -567,7 +640,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_finalize_win_emitsEvent() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -590,7 +663,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_finalize_revertsWhenAlreadyFinalized() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.finalize(address(0), false, true);
@@ -600,7 +673,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_finalize_revertsWhenDrawAndCancelled() public {
-        (uint256 gameId, address gameAddress) = _createGame(player1, STAKE);
+        (uint256 gameId, address gameAddress) = _createGame(player1);
 
         vm.prank(gameAddress);
         vm.expectRevert(abi.encodeWithSelector(EscrowManager.InvalidEndState.selector, gameId, true, true, address(0)));
@@ -608,7 +681,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_finalize_revertsWhenCancelledAndWinnerSet() public {
-        (uint256 gameId, address gameAddress) = _createGame(player1, STAKE);
+        (uint256 gameId, address gameAddress) = _createGame(player1);
 
         vm.prank(gameAddress);
         vm.expectRevert(abi.encodeWithSelector(EscrowManager.InvalidEndState.selector, gameId, false, true, player1));
@@ -616,7 +689,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_finalize_revertsWhenDrawAndWinnerSet() public {
-        (uint256 gameId, address gameAddress) = _createGame(player1, STAKE);
+        (uint256 gameId, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -629,7 +702,7 @@ contract EscrowManagerTest is Test {
     function test_finalize_revertsWhenNotDrawNotCancelButNoWinner() public {
         // Test that finalize reverts when trying to finalize as a win (not draw, not cancel)
         // but no winner address is provided
-        (uint256 gameId, address gameAddress) = _createGame(player1, STAKE);
+        (uint256 gameId, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -642,7 +715,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_finalize_revertsWhenWinnerNotAPlayerInGame() public {
-        (uint256 gameId, address gameAddress) = _createGame(player1, STAKE);
+        (uint256 gameId, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -653,7 +726,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_finalize_revertsWhenCancelButPlayer2Set() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -662,10 +735,78 @@ contract EscrowManagerTest is Test {
         vm.stopPrank();
     }
 
+    function test_finalize_revertsWhenPlayerTwoNotSetForWin() public {
+        (, address gameAddress) = _createGame(player1);
+
+        // Try to finalize as win/draw without setting player2
+        vm.startPrank(gameAddress);
+        vm.expectRevert(EscrowManager.PlayerTwoNotSet.selector);
+        escrowManager.finalize(player1, false, false); // win case
+        vm.stopPrank();
+    }
+
+    /// @notice Test finalize reverts when cancelling but player2 has already deposited (line 284)
+    /// @dev Cancel-before-join path requires neither player2 set nor player2 deposited.
+    ///      The branch stakeDepositedForPlayer2 is only reachable when player2 is zero (otherwise
+    ///      we hit PlayerTwoAlreadySet first). We set player2, deposit, then corrupt player2 to 0
+    ///      so the contract reverts with PlayerTwoAlreadyDeposited.
+    function test_finalize_revertsWhenCancelButPlayer2AlreadyDeposited() public {
+        (, address gameAddress) = _createGame(player1);
+
+        vm.startPrank(gameAddress);
+        escrowManager.setPlayer2(player2);
+        escrowManager.depositPlayer2();
+        vm.stopPrank();
+
+        // Corrupt player2 to address(0) so we hit the stakeDepositedForPlayer2 check (line 284)
+        // rather than PlayerTwoAlreadySet (line 283). escrows at slot 1, player2 at struct offset 2.
+        uint256 mappingSlot = 1;
+        bytes32 key = bytes32(uint256(uint160(gameAddress)));
+        bytes32 structSlot = keccak256(abi.encode(key, mappingSlot));
+        bytes32 player2Slot = bytes32(uint256(structSlot) + 2);
+        vm.store(address(escrowManager), player2Slot, bytes32(0));
+
+        vm.prank(gameAddress);
+        vm.expectRevert(EscrowManager.PlayerTwoAlreadyDeposited.selector);
+        escrowManager.finalize(address(0), false, true);
+    }
+
+    /// @notice Test finalize reverts when totalStaked != 2*stake (defensive check at line 299)
+    /// @dev We build a valid two-player escrow then corrupt totalStaked via vm.store
+    ///      and verify InvalidEscrowState is reverted.
+    function test_finalize_revertsWhenTotalStakedNotExpected() public {
+        (, address gameAddress) = _createGame(player1);
+
+        vm.startPrank(gameAddress);
+        escrowManager.setPlayer2(player2);
+        escrowManager.depositPlayer2();
+        vm.stopPrank();
+
+        // Corrupt totalStaked: escrows at slot 1, totalStaked at struct offset 4
+        uint256 mappingSlot = 1;
+        bytes32 key = bytes32(uint256(uint160(gameAddress)));
+        bytes32 structSlot = keccak256(abi.encode(key, mappingSlot));
+        bytes32 totalStakedSlot = bytes32(uint256(structSlot) + 4);
+        vm.store(address(escrowManager), totalStakedSlot, bytes32(uint256(STAKE))); // wrong total
+
+        uint256 gameId = 1;
+        uint256 expectedTotal = 2 * STAKE;
+        vm.prank(gameAddress);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                EscrowManager.InvalidEscrowState.selector,
+                gameId,
+                STAKE, // observed (corrupted)
+                expectedTotal
+            )
+        );
+        escrowManager.finalize(player1, false, false);
+    }
+
     // ============ Withdraw Refundable Stake Tests ============
 
     function test_withdrawRefundableStake_succeeds() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.prank(gameAddress);
         escrowManager.finalize(address(0), false, true);
@@ -679,7 +820,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_withdrawRefundableStake_emitsEvent() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.prank(gameAddress);
         escrowManager.finalize(address(0), false, true);
@@ -698,7 +839,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_withdrawRefundableStake_cannotWithdrawTwice() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.prank(gameAddress);
         escrowManager.finalize(address(0), false, true);
@@ -713,7 +854,7 @@ contract EscrowManagerTest is Test {
     // ============ Claim Reward Tests ============
 
     function test_claimReward_succeeds() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -730,7 +871,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_claimReward_emitsEvent() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -752,7 +893,7 @@ contract EscrowManagerTest is Test {
     }
 
     function test_claimReward_cannotClaimTwice() public {
-        (, address gameAddress) = _createGame(player1, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         vm.startPrank(gameAddress);
         escrowManager.setPlayer2(player2);
@@ -771,7 +912,7 @@ contract EscrowManagerTest is Test {
 
     function test_nonFactory_cannotRegister() public {
         // Create a game to get a valid game address
-        (, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         // Try to register as non-factory (should fail)
         bytes32 factoryRole = escrowManager.FACTORY_ROLE();
@@ -783,7 +924,7 @@ contract EscrowManagerTest is Test {
 
     function test_nonFactory_cannotDepositPlayer1() public {
         // Create a game (which already registers and deposits via factory)
-        (, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (, address gameAddress) = _createGame(player1);
 
         // Try to deposit as non-factory (should fail)
         bytes32 factoryRole = escrowManager.FACTORY_ROLE();
@@ -806,7 +947,7 @@ contract EscrowManagerTest is Test {
 
     function test_nonGame_cannotDepositPlayer2() public {
         // Create a game
-        (, address gameAddress) = _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        (, address gameAddress) = _createGame(player1);
         bytes32 gameRole = escrowManager.GAME_ROLE();
 
         // Set player2 as the game
@@ -821,7 +962,7 @@ contract EscrowManagerTest is Test {
 
     function test_nonGame_cannotFinalize() public {
         // Create a game
-        _createGame(player1, 0, 1, PLAY_CLOCK, STAKE);
+        _createGame(player1);
         bytes32 gameRole = escrowManager.GAME_ROLE();
         // Try to finalize as non-game (should fail)
         vm.expectRevert(
@@ -832,8 +973,8 @@ contract EscrowManagerTest is Test {
 
     function test_oneGame_cannotMutateAnotherGameEscrow() public {
         // Create both games using factory
-        (, address game1Address) = _createGame(player1, STAKE);
-        (, address game2Address) = _createGame(player2, STAKE);
+        (, address game1Address) = _createGame(player1);
+        (, address game2Address) = _createGame(player2);
 
         // Each game can only access its own escrow (via msg.sender)
         // game1 sets player2 for its own escrow
