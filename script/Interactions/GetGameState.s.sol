@@ -2,16 +2,15 @@
 pragma solidity ^0.8.26;
 
 import {console} from "forge-std/console.sol";
-import {Script} from "forge-std/Script.sol";
-import {SharksAndTigersFactory} from "../../src/SharksAndTigersFactory.sol";
 import {SharksAndTigers} from "../../src/SharksAndTigers.sol";
+import {DeploymentHelper} from "./lib/DeploymentHelper.s.sol";
 
 /**
  * @title GetGameState
  * @notice Read-only script to print the latest game's state.
  * @dev Uses getGameInfo(). Run: make get-game-state
  */
-contract GetGameState is Script {
+contract GetGameState is DeploymentHelper {
     function run() external view {
         address gameAddress = _getLatestGameAddress();
         SharksAndTigers.Game memory gameInfo = SharksAndTigers(gameAddress).getGameInfo();
@@ -86,46 +85,5 @@ contract GetGameState is Script {
         if (m == SharksAndTigers.Mark.Empty) return "--";
         if (m == SharksAndTigers.Mark.Shark) return unicode"🦈";
         return unicode"🐅";
-    }
-
-    function _getLatestGameAddress() internal view returns (address) {
-        string memory chainId = vm.toString(block.chainid);
-        string memory broadcastPath = string.concat("broadcast/Deploy.s.sol/", chainId);
-        string memory runPath = string.concat(broadcastPath, "/run-latest.json");
-        string memory dryRunPath = string.concat(broadcastPath, "/dry-run/run-latest.json");
-
-        string memory json;
-        try vm.readFile(runPath) returns (string memory fileContent) {
-            json = fileContent;
-        } catch {
-            try vm.readFile(dryRunPath) returns (string memory fileContent) {
-                json = fileContent;
-            } catch {
-                revert("Could not find deployment. Deploy the factory first with: make deploy");
-            }
-        }
-
-        address factoryAddress;
-        uint256 i = 0;
-        while (true) {
-            try vm.parseJsonString(json, string.concat(".transactions[", vm.toString(i), "].contractName")) returns (
-                string memory contractName
-            ) {
-                if (keccak256(bytes(contractName)) == keccak256(bytes("SharksAndTigersFactory"))) {
-                    factoryAddress =
-                        vm.parseJsonAddress(json, string.concat(".transactions[", vm.toString(i), "].contractAddress"));
-                    break;
-                }
-                i++;
-            } catch {
-                revert("SharksAndTigersFactory not found in deployment. Deploy first with: make deploy");
-            }
-        }
-
-        SharksAndTigersFactory factory = SharksAndTigersFactory(factoryAddress);
-        uint256 gameCount = factory.s_gameCount();
-        if (gameCount == 0) revert("No games found. Create a game first with: make create-game");
-
-        return factory.s_games(gameCount);
     }
 }
