@@ -1,5 +1,5 @@
 -include .env
-.PHONY: anvil build claim-reward clean create-game deploy format get-claimable get-game-state install join-game play-game remove snapshot test update
+.PHONY: anvil build claim-reward clean create-game deploy format get-claimable get-game-state get-refundable install join-game play-game remove snapshot test update withdraw-refundable
 
 # Anvil private keys
 DEFAULT_ANVIL_PRIVATE_KEY := 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
@@ -73,8 +73,14 @@ play-game:; @forge script script/Interactions/PlayGame.s.sol:PlayGame $(BASE_NET
 # Claim reward as winner (usage: make claim-reward PLAYER=1 or make claim-reward PLAYER=2)
 claim-reward:; @forge script script/Interactions/ClaimReward.s.sol:ClaimReward $(BASE_NETWORK_ARGS) --private-key $(PLAYER_KEY) --sig "run(uint8)" $(PLAYER)
 
+# Withdraw refundable stake (usage: make withdraw-refundable PLAYER=1 or make withdraw-refundable PLAYER=2)
+withdraw-refundable:; @forge script script/Interactions/WithdrawRefundable.s.sol:WithdrawRefundable $(BASE_NETWORK_ARGS) --private-key $(PLAYER_KEY) --sig "run(uint8)" $(PLAYER)
+
 # Get claimable balance for a player (read-only). Usage: make get-claimable PLAYER=1 or make get-claimable PLAYER=2
 get-claimable:; @forge script script/Interactions/GetClaimable.s.sol:GetClaimable $(READ_ONLY_NETWORK_ARGS) --private-key $(DEFAULT_ANVIL_PRIVATE_KEY) --sig "run(uint8)" $(PLAYER)
+
+# Get refundable balance for a player (read-only). Usage: make get-refundable PLAYER=1 or make get-refundable PLAYER=2
+get-refundable:; @forge script script/Interactions/GetRefundable.s.sol:GetRefundable $(READ_ONLY_NETWORK_ARGS) --private-key $(DEFAULT_ANVIL_PRIVATE_KEY) --sig "run(uint8)" $(PLAYER)
 
 # Get latest game state (read-only, no broadcast). Usage: make get-game-state or make get-game-state ARGS=base-sepolia
 get-game-state:; @forge script script/Interactions/GetGameState.s.sol:GetGameState $(READ_ONLY_NETWORK_ARGS) --private-key $(DEFAULT_ANVIL_PRIVATE_KEY)
