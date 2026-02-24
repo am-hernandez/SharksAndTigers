@@ -46,6 +46,7 @@
         <li><a href="#board-layout">Board Layout</a></li>
         <li><a href="#architecture">Architecture</a></li>
         <li><a href="#contracts">Contracts</a></li>
+        <li><a href="#interaction-scripts">Interaction Scripts</a></li>
       </ul>
     </li>
     <li><a href="#roadmap">Roadmap</a></li>
@@ -62,7 +63,7 @@
 
 ## About The Project
 
-**Sharks & Tigers** is an onchain Tic-Tac-Toe game built with Solidity. Players create and join individual games deployed as separate smart contracts, with all game state and moves recorded onchain.
+**Sharks & Tigers** is an onchain Tic-Tac-Toe game built with Solidity. Each game is deployed as its own immutable smart contract, with all state transitions and outcomes enforced onchain.
 
 The game replaces traditional X and O marks with Shark and Tiger symbols, giving each match a simple identity while keeping the underlying rules unchanged.
 
@@ -73,7 +74,7 @@ The game replaces traditional X and O marks with Shark and Tiger symbols, giving
 * **One Game = One Contract**: Each match is its own immutable contract
 * **Event-Based Updates**: Game lifecycle events are emitted for indexing and UI use
 * **Fixed Rules per Game**: Rules are set at creation and cannot change mid-game
-* **USDC Staking**: Players stake USDC tokens in escrow until game completion
+* **USDC Staking**: Players stake USDC in a central **EscrowManager** until the game ends
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -139,12 +140,12 @@ This section provides instructions on setting up the project locally. To get a l
 1. **Create Game**
    * Player One creates a game through the factory
    * Chooses a mark (Shark or Tiger) and an opening position
-   * Approves and transfers their USDC stake to the factory
+   * Approves USDC to the **EscrowManager**; the factory registers the game with escrow and deposits Player One’s stake there
    * Game enters the `Open` state
 
 2. **Join Game**
    * Player Two joins the game and makes their first move
-   * Approves and transfers matching USDC stake
+   * Approves and transfers matching USDC stake to **EscrowManager**
    * Game transitions to `Active`
 
 3. **Play**
@@ -156,7 +157,7 @@ This section provides instructions on setting up the project locally. To get a l
    * A player wins by completing three in a row, column, or diagonal
    * The game ends in a draw when the board is full
    * Game state transitions to `Ended`
-   * Winner claims the reward (both escrowed stakes)
+   * EscrowManager credits the winner; the winner claims both escrowed stakes from EscrowManager
 
 ### Board Layout
 
@@ -172,30 +173,31 @@ Board positions are indexed as follows:
 
 ### Architecture
 
-The system consists of two main contracts:
+The system has three main contracts:
 
 1. **SharksAndTigersFactory**
-   Creates and tracks individual game contracts.
+   Deploys a single **EscrowManager** and creates/tracks individual game contracts. Holds `FACTORY_ROLE` on the escrow.
 
-2. **SharksAndTigers**
-   Manages the state and logic for a single game.
+2. **EscrowManager**
+   Custodies all USDC stakes and tracks per-game escrow state. Registers games, receives deposits from both players, and records outcomes when games call `finalize`. Players claim winnings or withdraw refunds from here.
 
-```
-SharksAndTigersFactory
-    ├── Creates → SharksAndTigers (Game 1)
-    ├── Creates → SharksAndTigers (Game 2)
-    └── Creates → SharksAndTigers (Game N)
-```
+3. **SharksAndTigers**
+   One contract per game. Manages board state and moves; has `GAME_ROLE` on the escrow and finalizes the escrow position when the game ends. Players claim reward or withdraw refundable stake from EscrowManager.
+
+The EscrowManager is deployed once in the Factory constructor and is immutable. All games created by that factory register with this escrow instance.
+
+A global EscrowManager is used instead of per-game escrow contracts to reduce token approval friction and allow players to withdraw accumulated winnings/refunds across multiple games in a single transaction.
 
 ### Contracts
 
 #### SharksAndTigersFactory
 
-The factory contract is responsible for creating new games and keeping a registry of deployed game contracts.
+The factory deploys one EscrowManager and creates new games, registering each game with the escrow and keeping a registry of game contracts.
 
 **State Variables**
 
-* `i_usdcToken` (`address immutable`): USDC token contract address
+* `i_usdcToken` (`IERC20 immutable`): USDC token contract
+* `i_escrowManager` (`EscrowManager immutable`): Central escrow that holds stakes and pays out winners/refunds
 * `s_gameCount` (`uint256`): Total number of games created
 * `s_games` (`mapping(uint256 => address)`): Maps game IDs to game addresses
 
@@ -216,32 +218,19 @@ Creates a new game instance with Player One's initial move.
 
 * `position` must be within range
 * `_playerOneMark` must be Shark or Tiger
-* Player must have approved the factory to spend USDC
+* Player must have approved the EscrowManager to spend USDC
 * Player must have sufficient USDC balance
 
 **Effects**
 
 * Deploys a new `SharksAndTigers` contract
-* Transfers USDC stake from player to game contract
-* Increments the game counter
-* Stores the game address
+* Registers the game with the EscrowManager and deposits Player One’s USDC stake there
+* Increments the game counter and stores the game address
 * Emits `GameCreated`
 
-##### `getGameAddress(uint256 gameId) external view returns (address)`
+##### `s_games(uint256 gameId)` / `s_gameCount()`
 
-Returns the address of a game contract by ID.
-
-##### `getGameCount() external view returns (uint256)`
-
-Returns the total number of games created.
-
-##### `checkAllowance(address owner, uint256 amount) external view returns (bool)`
-
-Checks if the owner has approved the factory to spend the specified amount of USDC.
-
-##### `getUsdcToken() external view returns (address)`
-
-Returns the USDC token contract address.
+Public state: use `s_games(gameId)` to get the game address and `s_gameCount` for the latest game ID.
 
 #### SharksAndTigers
 
@@ -249,6 +238,7 @@ A single game contract that contains all logic and state for one match.
 
 **State Variables**
 
+* `BOARD_SIZE` (`uint256 constant`): The number of position spaces on the game board
 * `i_gameId` (`uint256 immutable`): Unique game identifier
 * `i_stake` (`uint256 immutable`): USDC stake amount per player
 * `i_playClock` (`uint256 immutable`): Time limit per move in seconds
@@ -259,11 +249,11 @@ A single game contract that contains all logic and state for one match.
 * `s_currentPlayer` (`address`): Address of the player whose turn it is
 * `s_winner` (`address`): Address of the winner (if any)
 * `s_isDraw` (`bool`): Whether the game ended in a draw
-* `s_isRewardClaimed` (`bool`): Whether the reward has been claimed
 * `s_gameState` (`GameState`): Current state of the game
 * `i_playerOneMark` (`Mark immutable`): Mark assigned to player one
 * `i_playerTwoMark` (`Mark immutable`): Mark assigned to player two
 * `s_gameBoard` (`Mark[9]`): The game board
+* `i_escrowManager` (`address immutable`): EscrowManager address; game calls it to finalize outcomes
 
 **Enums**
 
@@ -289,19 +279,55 @@ Allows player two to join the game and make their first move.
 
 ##### `makeMove(uint8 position) external`
 
-Allows the current player to make a move.
+Allows the current player to make a move. If the move completes three in a row, column, or diagonal, the game ends and EscrowManager is finalized for the winner; if the board is full, the game ends in a draw and escrow is finalized. Uses internal `_isWinningMove` and `_isBoardFull` for outcome detection.
 
-##### `claimReward() external`
+##### `resolveTimeout() external`
 
-Allows the winner to claim the reward (both escrowed stakes) after the game ends.
+Callable when the play clock has expired (current player did not move in time). Requires game in `Active` state and Player Two already joined. Awards the win to the opponent, updates game state to `Ended`, and calls EscrowManager `finalize(winner, false, false)`.
 
-##### `withdrawStake() external`
+##### `cancelOpenGame() external`
 
-Allows players to withdraw their stake if the game expires due to play clock timeout.
+Allows Player One to cancel before anyone joins. Requires game in `Open` state and Player Two not set. Marks game as `Ended` and calls EscrowManager `finalize(address(0), false, true)` so Player One’s stake becomes refundable.
+
+##### `getGameInfo() external view returns (Game memory)`
+
+Returns the full game state (gameId, stake, playClock, lastPlayTime, playerOne, playerTwo, currentPlayer, winner, isDraw, gameState, playerOneMark, playerTwoMark, gameBoard, escrowManager).
+
+#### EscrowManager
+
+Central contract that custodies all USDC stakes and tracks per-game escrow state. 
+
+**Access Controls**
+- `FACTORY_ROLE`: granted to the game factory 
+- `GAME_ROLE`: granted to each registered game
+
+**Key functions**
+
+* **Factory**: `registerGame(game, gameId, player1, stake)` then `depositPlayer1(game)` after creating a game.
+* **Game**: `setPlayer2(player2)`, `depositPlayer2()`, and `finalize(winner, isDraw, isCancelled)` when the game ends.
+* **Players**: `claimReward()` (winners) and `withdrawRefundableStake()` (draw/cancel refunds).
+
+State includes `escrows(gameAddress)`, `claimable[player]`, and `refundable[player]`.
+
+### Interaction Scripts
+
+Foundry scripts under `script/Interactions/` can be run via the Makefile against a local node (e.g. `make anvil` in another terminal) or a configured network.
+
+| Command | Description |
+|--------|-------------|
+| `make deploy` | Deploy the factory (and its EscrowManager). |
+| `make create-game` | Player One creates a game (default key). |
+| `make join-game` | Player Two joins the latest game. |
+| `make play-game PLAYER=1 POS=2` | Play one move; `PLAYER` 1 or 2, `POS` 0–8. |
+| `make claim-reward PLAYER=1` | Winner claims winnings from EscrowManager. |
+| `make withdraw-refundable PLAYER=1` | Withdraw refundable stake (draw/cancel). |
+| `make get-game-state` | Print latest game state (read-only). |
+| `make get-claimable PLAYER=1` | Print claimable balance for player (read-only). |
+| `make get-refundable PLAYER=1` | Print refundable balance for player (read-only). |
+
+Use `ARGS=base-sepolia` (or similar) with deploy/create-game/join-game/play-game/claim-reward/withdraw-refundable for a live testnet; ensure `.env` and keys are set.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
 
 ## Roadmap
 
@@ -328,8 +354,9 @@ This project implements several security best practices:
 * **Input Validation**: All inputs are validated before processing
 * **State Machine**: State transitions are enforced through a finite state machine
 * **Immutability**: Game parameters are immutable once deployed
-* **CEI Pattern**: Checks-Effects-Interactions pattern followed to prevent reentrancy
+* **CEI Pattern**: Checks-Effects-Interactions (CEI) pattern enforced before all external calls to EscrowManager
 * **ReentrancyGuard**: OpenZeppelin's ReentrancyGuardTransient used for critical functions
+* **Centralized escrow**: Centralized escrow accounting reduces per-game attack surface while isolating game logic
 * **SafeERC20**: OpenZeppelin's SafeERC20 used for all token transfers
 * **Event Logging**: Events emitted for all critical actions for transparency
 
@@ -345,6 +372,7 @@ This project implements several security best practices:
 * **No admin or upgrade hooks are included** to avoid trust assumptions and governance complexity.
 * **USDC is used instead of ETH** to reduce volatility and simplify escrow accounting.
 * **Play clock enforces liveness** rather than relying on offchain arbitration or admin intervention.
+* **Centralized escrow is used** to improve user expeerience in setting USDC approval for one contract instead of approving the factory and each game contract.
 
 ### Non-Goals
 
