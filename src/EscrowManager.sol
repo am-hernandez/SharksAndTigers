@@ -20,6 +20,8 @@ contract EscrowManager is AccessControl, ReentrancyGuardTransient {
     error NotFactory();
     /// @notice Thrown when attempting to operate on an unregistered game
     error GameNotRegistered();
+    /// @notice Thrown when granting a role fails
+    error FailedToGrantRole(bytes32 role, address account);
     /// @notice Thrown when attempting to register a game that is already registered
     error AlreadyRegistered();
     /// @notice Thrown when game address is invalid
@@ -134,8 +136,11 @@ contract EscrowManager is AccessControl, ReentrancyGuardTransient {
         if (factory == address(0)) revert NotFactory();
         if (usdcToken == address(0)) revert InvalidToken();
 
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(FACTORY_ROLE, factory);
+        bool grantedDeafultAdminRole = _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        if (!grantedDeafultAdminRole) revert FailedToGrantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        bool grantedFactoryRole = _grantRole(FACTORY_ROLE, factory);
+        if (!grantedFactoryRole) revert FailedToGrantRole(FACTORY_ROLE, factory);
+
         i_usdcToken = IERC20(usdcToken);
     }
 
@@ -169,7 +174,8 @@ contract EscrowManager is AccessControl, ReentrancyGuardTransient {
         });
 
         // Grant GAME_ROLE to the specific game contract
-        _grantRole(GAME_ROLE, game);
+        bool grantedGameRole = _grantRole(GAME_ROLE, game);
+        if (!grantedGameRole) revert FailedToGrantRole(GAME_ROLE, game);
 
         emit GameRegistered(gameId, game, player1, stake);
     }
