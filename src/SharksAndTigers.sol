@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/utils/ReentrancyGuardTransient.sol";
+import {EscrowManager} from "./EscrowManager.sol";
 
 contract SharksAndTigers is ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
@@ -12,19 +13,18 @@ contract SharksAndTigers is ReentrancyGuardTransient {
     uint256 public immutable i_gameId;
     uint256 public immutable i_stake;
     uint256 public immutable i_playClock;
-    address public immutable i_usdcToken;
+    IERC20 public immutable i_usdcToken;
     uint256 public s_lastPlayTime;
     address public immutable i_playerOne;
     address public s_playerTwo;
     address public s_currentPlayer;
     address public s_winner;
     bool public s_isDraw;
-    bool public s_isRewardClaimed;
     GameState public s_gameState;
     Mark public immutable i_playerOneMark;
     Mark public immutable i_playerTwoMark;
     Mark[BOARD_SIZE] public s_gameBoard;
-    mapping(address => uint256) public s_balances;
+    address public immutable i_escrowManager;
 
     event PlayerTwoJoined(
         uint256 indexed gameId,
@@ -84,11 +84,11 @@ contract SharksAndTigers is ReentrancyGuardTransient {
         address currentPlayer;
         address winner;
         bool isDraw;
-        bool isRewardClaimed;
         GameState gameState;
         Mark playerOneMark;
         Mark playerTwoMark;
         Mark[BOARD_SIZE] gameBoard;
+        address escrowManager;
     }
 
     constructor(
@@ -97,13 +97,18 @@ contract SharksAndTigers is ReentrancyGuardTransient {
         Mark _mark,
         uint256 _playClock,
         uint256 _gameId,
-        address _usdcToken,
-        uint256 _stake
+        IERC20 _usdcToken,
+        uint256 _stake,
+        address _escrowManager
     ) {
         require(_playerOne != address(0), "Player one cannot be the zero address");
-        require(_usdcToken != address(0), "USDC token address cannot be zero");
+        require(address(_usdcToken) != address(0), "USDC token address cannot be zero");
+        require(_escrowManager != address(0), "Escrow manager cannot be the zero address");
         require(_stake > 0, "Stake must be greater than zero");
         require(_playClock > 0, "Play clock must be greater than zero");
+        require(_mark == Mark.Shark || _mark == Mark.Tiger, "Invalid mark choice");
+        require(_position < BOARD_SIZE, "Position is out of range");
+        require(_gameId > 0, "Game ID must be greater than zero");
 
         i_gameId = _gameId;
         i_playerOne = _playerOne;
@@ -111,13 +116,12 @@ contract SharksAndTigers is ReentrancyGuardTransient {
         i_stake = _stake;
         i_playClock = _playClock;
         i_usdcToken = _usdcToken;
-        s_isRewardClaimed = false;
-        s_balances[_playerOne] = _stake;
         i_playerOneMark = Mark(_mark);
         i_playerTwoMark = (_mark == Mark.Shark) ? Mark.Tiger : Mark.Shark;
 
         // set the first move on the board
         s_gameBoard[_position] = i_playerOneMark;
+        i_escrowManager = _escrowManager;
     }
 
     modifier validatePlayerMove(uint8 _position) {
@@ -130,37 +134,27 @@ contract SharksAndTigers is ReentrancyGuardTransient {
 
     /**
      * @notice Allows player two to join the game with matching stake amount
-     * @dev User must first approve this game contract to spend USDC: usdc.approve(gameAddress, stakeAmount)
      * @param _position Board position (0-8) for player two's first move
      */
-    function joinGame(uint8 _position) external validatePlayerMove(_position) nonReentrant {
+    function joinGame(uint8 _position) external nonReentrant validatePlayerMove(_position) {
         require(s_gameState == GameState.Open, "Game is not open to joining");
         require(s_playerTwo == address(0), "Player two already joined");
         require(msg.sender != i_playerOne, "Player one cannot join as player two");
 
-        // Check that user has approved a sufficient USDC amount to stake
-        // User must call: IERC20(i_usdcToken).approve(address(this), i_stake) first
-        IERC20 usdc = IERC20(i_usdcToken);
-        uint256 allowance = usdc.allowance(msg.sender, address(this));
-        require(
-            allowance >= i_stake,
-            "Insufficient USDC allowance. Please approve the game contract to spend the stake amount."
-        );
-
-        // Transfer USDC from player two
-        usdc.safeTransferFrom(msg.sender, address(this), i_stake);
-
         s_gameState = GameState.Active;
         s_playerTwo = msg.sender;
-        s_balances[msg.sender] = i_stake;
         s_gameBoard[_position] = i_playerTwoMark;
         s_currentPlayer = i_playerOne;
         s_lastPlayTime = block.timestamp;
 
-        emit PlayerTwoJoined(i_gameId, address(this), s_playerTwo, i_playerTwoMark, _position, i_playClock, i_stake);
+        EscrowManager escrowManager = EscrowManager(i_escrowManager);
+        escrowManager.setPlayer2(msg.sender);
+        escrowManager.depositPlayer2();
+
+        emit PlayerTwoJoined(i_gameId, address(this), msg.sender, i_playerTwoMark, _position, i_playClock, i_stake);
     }
 
-    function makeMove(uint8 _position) external validatePlayerMove(_position) {
+    function makeMove(uint8 _position) external nonReentrant validatePlayerMove(_position) {
         require(s_gameState == GameState.Active, "Game is not active");
         require(s_currentPlayer == msg.sender, "You are not the current player");
         require(block.timestamp - s_lastPlayTime <= i_playClock, "You ran out of time to make a move");
@@ -177,11 +171,16 @@ contract SharksAndTigers is ReentrancyGuardTransient {
 
         s_gameBoard[_position] = playMark;
         s_lastPlayTime = block.timestamp;
+        EscrowManager escrowManager = EscrowManager(i_escrowManager);
 
         if (_isWinningMove(_position)) {
             // game is won
             s_gameState = GameState.Ended;
+            s_isDraw = false;
             s_winner = msg.sender;
+
+            escrowManager.finalize(msg.sender, false, false);
+
             emit GameEnded(
                 i_gameId,
                 address(this),
@@ -193,13 +192,17 @@ contract SharksAndTigers is ReentrancyGuardTransient {
                 i_playClock,
                 s_lastPlayTime,
                 false,
-                s_winner,
-                s_isDraw
+                msg.sender,
+                false
             );
         } else if (_isBoardFull()) {
             // game is a draw
             s_gameState = GameState.Ended;
             s_isDraw = true;
+            s_winner = address(0);
+
+            escrowManager.finalize(address(0), true, false);
+
             emit GameEnded(
                 i_gameId,
                 address(this),
@@ -211,8 +214,8 @@ contract SharksAndTigers is ReentrancyGuardTransient {
                 i_playClock,
                 s_lastPlayTime,
                 false,
-                s_winner,
-                s_isDraw
+                address(0),
+                true
             );
         } else {
             emit MoveMade(
@@ -221,85 +224,66 @@ contract SharksAndTigers is ReentrancyGuardTransient {
         }
     }
 
-    function claimReward() external nonReentrant {
-        bool isExpired;
+    function resolveTimeout() external nonReentrant {
+        address playerOne = i_playerOne;
+        address playerTwo = s_playerTwo;
+        uint256 lastPlayTime = s_lastPlayTime;
+        uint256 playClock = i_playClock;
+        require(s_gameState == GameState.Active, "Game not active");
+        require(block.timestamp - lastPlayTime > playClock, "Not expired");
+        require(playerTwo != address(0), "Player2 not set");
 
-        if (block.timestamp - s_lastPlayTime > i_playClock) {
-            // game is expired, winner is opposite of current player
-            if (s_currentPlayer == i_playerOne) {
-                s_winner = s_playerTwo;
-            } else {
-                s_winner = i_playerOne;
-            }
-            isExpired = true;
-        } else {
-            require(s_gameState == GameState.Ended, "Game is not ended");
-            require(s_isDraw == false, "No winner, game ended in a draw");
-            require(s_winner == msg.sender, "Only the winner can claim the reward");
-            require(s_isRewardClaimed == false, "Reward already claimed");
-        }
-        require(s_winner == msg.sender, "Only the winner can claim the reward");
+        // winner is the opponent of currentPlayer
+        address winner = (s_currentPlayer == playerOne) ? playerTwo : playerOne;
 
-        s_balances[i_playerOne] = 0;
-        s_balances[s_playerTwo] = 0;
-        s_isRewardClaimed = true;
+        s_gameState = GameState.Ended;
+        s_isDraw = false;
+        s_winner = winner;
 
-        IERC20 usdc = IERC20(i_usdcToken);
-        usdc.safeTransfer(msg.sender, i_stake * 2);
-
-        if (isExpired) {
-            // if game is expired
-            // update game state after winner claims
-            s_gameState = GameState.Ended;
-            emit GameEnded(
-                i_gameId,
-                address(this),
-                i_playerOne,
-                s_playerTwo,
-                i_playerOneMark,
-                i_playerTwoMark,
-                i_stake,
-                i_playClock,
-                s_lastPlayTime,
-                isExpired,
-                s_winner,
-                s_isDraw
-            );
-        }
-    }
-
-    function withdrawStake() external nonReentrant {
-        require(msg.sender == i_playerOne || msg.sender == s_playerTwo, "You are not a player in this game");
-        require(s_gameState != GameState.Active, "Cannot withdraw stake while game is active");
-        require(s_winner == address(0), "Game is not a draw, winner must call claimReward");
-
-        uint256 playerBalance = s_balances[msg.sender];
-        require(playerBalance > 0, "Nothing to withdraw");
-
-        s_balances[msg.sender] = 0;
-
-        if (s_gameState == GameState.Open) {
-            require(msg.sender == i_playerOne, "Only player one can end an open game");
-
-            s_gameState = GameState.Ended;
-        }
-
-        IERC20 usdc = IERC20(i_usdcToken);
-        usdc.safeTransfer(msg.sender, playerBalance);
+        EscrowManager(i_escrowManager).finalize(winner, false, false);
 
         emit GameEnded(
             i_gameId,
             address(this),
-            i_playerOne,
-            s_playerTwo,
+            playerOne,
+            playerTwo,
+            i_playerOneMark,
+            i_playerTwoMark,
+            i_stake,
+            playClock,
+            lastPlayTime,
+            true,
+            winner,
+            false
+        );
+    }
+
+    function cancelOpenGame() external nonReentrant {
+        address playerOne = i_playerOne;
+        address playerTwo = s_playerTwo;
+        require(s_gameState == GameState.Open, "Game is not open");
+        require(msg.sender == playerOne, "Only player1 can cancel an open game");
+        require(playerTwo == address(0), "Player2 has already joined the game");
+
+        s_gameState = GameState.Ended;
+        s_isDraw = false;
+        s_winner = address(0);
+
+        EscrowManager(i_escrowManager).finalize(address(0), false, true);
+
+        emit GameEnded(
+            i_gameId,
+            address(this),
+            playerOne,
+            playerTwo,
             i_playerOneMark,
             i_playerTwoMark,
             i_stake,
             i_playClock,
             s_lastPlayTime,
             false,
-            s_winner,
-            s_isDraw
+            address(0),
+            true
         );
     }
 
@@ -316,40 +300,14 @@ contract SharksAndTigers is ReentrancyGuardTransient {
             currentPlayer: s_currentPlayer,
             winner: s_winner,
             isDraw: s_isDraw,
-            isRewardClaimed: s_isRewardClaimed,
             gameState: s_gameState,
             playerOneMark: i_playerOneMark,
             playerTwoMark: i_playerTwoMark,
-            gameBoard: s_gameBoard
+            gameBoard: s_gameBoard,
+            escrowManager: i_escrowManager
         });
 
         return gameInfo;
-    }
-
-    /**
-     * @notice Helper function to check if user has sufficient allowance for the stake amount
-     * @param user The address to check allowance for
-     * @return hasAllowance True if user has sufficient allowance
-     * @return currentAllowance The current allowance amount
-     * @return requiredStake The stake amount required for the game
-     */
-    function checkAllowance(address user)
-        external
-        view
-        returns (bool hasAllowance, uint256 currentAllowance, uint256 requiredStake)
-    {
-        IERC20 usdc = IERC20(i_usdcToken);
-        currentAllowance = usdc.allowance(user, address(this));
-        requiredStake = i_stake;
-        hasAllowance = currentAllowance >= i_stake;
-    }
-
-    /**
-     * @notice Returns the USDC token address for easy approval
-     * @return The USDC token contract address
-     */
-    function getUsdcToken() external view returns (address) {
-        return i_usdcToken;
     }
 
     // Private functions
@@ -409,7 +367,7 @@ contract SharksAndTigers is ReentrancyGuardTransient {
 
     function _isBoardFull() private view returns (bool) {
         // validate the board is full and game is a draw
-        for (uint256 i; i < BOARD_SIZE; i++) {
+        for (uint256 i = 0; i < BOARD_SIZE; i++) {
             if (s_gameBoard[i] == Mark.Empty) {
                 return false; // Game board is not full
             }

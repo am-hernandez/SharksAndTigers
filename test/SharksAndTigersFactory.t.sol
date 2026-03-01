@@ -3,9 +3,11 @@ pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
+import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {ERC20Mock} from "@openzeppelin/mocks/token/ERC20Mock.sol";
 import {SharksAndTigers} from "src/SharksAndTigers.sol";
 import {SharksAndTigersFactory} from "src/SharksAndTigersFactory.sol";
+import {EscrowManager} from "src/EscrowManager.sol";
 
 contract SharksAndTigersFactoryTest is Test {
     SharksAndTigersFactory internal factory;
@@ -21,7 +23,7 @@ contract SharksAndTigersFactoryTest is Test {
         usdc = new ERC20Mock();
 
         // Deploy factory with USDC token address
-        factory = new SharksAndTigersFactory(address(usdc));
+        factory = new SharksAndTigersFactory(IERC20(address(usdc)));
 
         walletOne = makeAddr("walletOne");
         walletTwo = makeAddr("walletTwo");
@@ -38,40 +40,43 @@ contract SharksAndTigersFactoryTest is Test {
     function test_initialGameCountIsZero() public view {
         uint256 count = factory.s_gameCount();
         assertEq(count, 0);
-        assertEq(factory.getGameCount(), 0);
+        assertEq(factory.s_gameCount(), 0);
     }
 
     function test_createGame_revertsOnInvalidMark() public {
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), STAKE);
-        vm.expectRevert(bytes("Invalid mark for board"));
+        EscrowManager escrowManager = factory.i_escrowManager();
+        usdc.approve(address(escrowManager), STAKE);
+        vm.expectRevert(SharksAndTigersFactory.InvalidMark.selector);
 
         // arg1 is position, arg2 is mark, arg3 is playClock, arg4 is stake
-        // 0 is Empty, and 1 is Shark, 2 is Tiger, so 0 is invalid
-        factory.createGame(0, 0, PLAY_CLOCK, STAKE);
+        // Empty is invalid, only Shark and Tiger are valid
+        factory.createGame(0, SharksAndTigers.Mark.Empty, PLAY_CLOCK, STAKE);
         vm.stopPrank();
     }
 
     function test_createGame_revertsOnOutOfRangePosition() public {
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), STAKE);
-        vm.expectRevert(bytes("Position is out of range"));
+        EscrowManager escrowManager = factory.i_escrowManager();
+        usdc.approve(address(escrowManager), STAKE);
+        vm.expectRevert(SharksAndTigersFactory.InvalidPosition.selector);
 
         // arg1 is position, arg2 is mark, arg3 is playClock, arg4 is stake
         // acceptable range is 0 - 8
-        factory.createGame(9, 1, PLAY_CLOCK, STAKE);
+        factory.createGame(9, SharksAndTigers.Mark.Shark, PLAY_CLOCK, STAKE);
         vm.stopPrank();
     }
 
     function test_createGame_incrementsGameCountAndStoresMapping() public {
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), STAKE);
-        factory.createGame(0, 1, PLAY_CLOCK, STAKE);
+        EscrowManager escrowManager = factory.i_escrowManager();
+        usdc.approve(address(escrowManager), STAKE);
+        factory.createGame(0, SharksAndTigers.Mark.Shark, PLAY_CLOCK, STAKE);
         vm.stopPrank();
 
         assertEq(factory.s_gameCount(), 1);
 
-        address gameAddr = factory.getGameAddress(1);
+        address gameAddr = factory.s_games(1);
         assertTrue(gameAddr != address(0));
 
         // Assert game is Open for joining
@@ -83,8 +88,9 @@ contract SharksAndTigersFactoryTest is Test {
         // Record logs then create game
         vm.recordLogs();
         vm.startPrank(walletOne);
-        usdc.approve(address(factory), STAKE);
-        factory.createGame(0, 1, PLAY_CLOCK, STAKE);
+        EscrowManager escrowManager = factory.i_escrowManager();
+        usdc.approve(address(escrowManager), STAKE);
+        factory.createGame(0, SharksAndTigers.Mark.Shark, PLAY_CLOCK, STAKE);
         vm.stopPrank();
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
@@ -102,7 +108,7 @@ contract SharksAndTigersFactoryTest is Test {
                     abi.decode(entries[i].data, (uint8, uint256, uint256, uint256));
 
                 assertEq(gameId, 1);
-                assertEq(gameContract, factory.getGameAddress(gameId));
+                assertEq(gameContract, factory.s_games(gameId));
                 assertEq(playerOneAddr, walletOne);
                 assertEq(playerOneMark, uint8(SharksAndTigers.Mark.Shark));
                 assertEq(position, 0);

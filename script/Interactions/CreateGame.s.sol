@@ -5,6 +5,7 @@ import {console} from "forge-std/console.sol";
 import {Script} from "forge-std/Script.sol";
 import {SharksAndTigersFactory} from "../../src/SharksAndTigersFactory.sol";
 import {SharksAndTigers} from "../../src/SharksAndTigers.sol";
+import {EscrowManager} from "../../src/EscrowManager.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 import {GameConfig} from "./lib/GameConfig.s.sol";
@@ -17,13 +18,15 @@ contract CreateGame is Script {
         // Cast address to factory contract
         SharksAndTigersFactory factory = SharksAndTigersFactory(mostRecentlyDeployedFactoryAddress);
 
-        // Get USDC token address from factory
-        address usdcTokenAddress = factory.getUsdcToken();
+        // Get EscrowManager and USDC token addresses from factory
+        EscrowManager escrowManager = factory.i_escrowManager();
+        address usdcTokenAddress = address(escrowManager.i_usdcToken());
         IERC20 usdc = IERC20(usdcTokenAddress);
 
         // Game parameters from shared config
         uint8 position = GameConfig.PLAYER_ONE_STARTING_POSITION;
-        uint256 playerOneMark = GameConfig.PLAYER_ONE_MARK;
+        SharksAndTigers.Mark playerOneMark =
+            GameConfig.PLAYER_ONE_MARK == 1 ? SharksAndTigers.Mark.Shark : SharksAndTigers.Mark.Tiger;
         uint256 playClock = GameConfig.PLAY_CLOCK;
         uint256 stake = GameConfig.STAKE;
 
@@ -34,9 +37,10 @@ contract CreateGame is Script {
 
         // Check balance and allowance
         uint256 balance = usdc.balanceOf(msg.sender);
-        uint256 currentAllowance = usdc.allowance(msg.sender, mostRecentlyDeployedFactoryAddress);
+        address escrowManagerAddress = address(escrowManager);
+        uint256 currentAllowance = usdc.allowance(msg.sender, escrowManagerAddress);
         console.log("Player one USDC balance:", balance);
-        console.log("Current USDC allowance:", currentAllowance);
+        console.log("Current USDC allowance to EscrowManager:", currentAllowance);
         console.log("Required stake amount:", stake);
 
         if (balance < stake) {
@@ -45,14 +49,14 @@ contract CreateGame is Script {
             }
         }
 
-        // Approve factory to spend USDC if needed
+        // Approve EscrowManager to spend USDC if needed
         if (currentAllowance < stake) {
-            console.log("Approving factory to spend USDC...");
+            console.log("Approving EscrowManager to spend USDC...");
             // Reset to zero first to handle tokens that require zero before new approval
             if (currentAllowance > 0) {
-                usdc.approve(mostRecentlyDeployedFactoryAddress, 0);
+                usdc.approve(escrowManagerAddress, 0);
             }
-            usdc.approve(mostRecentlyDeployedFactoryAddress, stake);
+            usdc.approve(escrowManagerAddress, stake);
             console.log("Approval successful");
         }
 
@@ -63,8 +67,8 @@ contract CreateGame is Script {
         vm.stopBroadcast();
 
         // Read game details (view calls don't need broadcast)
-        uint256 gameCount = factory.getGameCount();
-        address gameAddress = factory.getGameAddress(gameCount);
+        uint256 gameCount = factory.s_gameCount();
+        address gameAddress = factory.s_games(gameCount);
         SharksAndTigers gameContract = SharksAndTigers(gameAddress);
         address creator = gameContract.i_playerOne();
 
@@ -72,7 +76,7 @@ contract CreateGame is Script {
         console.log("Game ID:", gameCount);
         console.log("Game contract address:", gameAddress);
         console.log("Player One (creator):", creator);
-        console.log("Player One Mark:", playerOneMark == 1 ? "Shark" : "Tiger");
+        console.log("Player One Mark:", GameConfig.PLAYER_ONE_MARK == 1 ? "Shark" : "Tiger");
         console.log("Initial Position:", position);
         console.log("Play Clock:", playClock, "seconds");
         console.log("Stake:", stake / 1e6, "USDC");
